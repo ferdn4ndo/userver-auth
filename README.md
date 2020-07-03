@@ -1,4 +1,4 @@
-# uServer Mailer
+# uServer Auth
 
 Authentication microserveice based on [flask-jwt-auth](https://github.com/realpython/flask-jwt-auth).
 
