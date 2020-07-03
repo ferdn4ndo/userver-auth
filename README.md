@@ -1,9 +1,10 @@
-# Authenticator
+# uServer Mailer
 
 Authentication microserveice based on [flask-jwt-auth](https://github.com/realpython/flask-jwt-auth).
 
-Check out the [blog post](https://realpython.com/blog/python/token-based-authentication-with-flask/) to understand the original project where this one originated.
+It's part of the [uServer](https://github.com/users/ferdn4ndo/projects/1) stack project.
 
+Check out the [blog post](https://realpython.com/blog/python/token-based-authentication-with-flask/) to understand the original project where this one originated.
 
 ### Prepare the environment
 
@@ -22,7 +23,6 @@ Take a look at `setup.sh` and adjust it accordingly if needed, then run:
 ```sh
 docker exec -it authenticator sh -c "./setup.sh"
 ```
-
 
 Access the application at the address [http://localhost:5000/](http://localhost:5000/) or any other environment configuration you made.
 
