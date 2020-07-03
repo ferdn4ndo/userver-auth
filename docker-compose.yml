@@ -1,0 +1,18 @@
+version: '3'
+services:
+  authenticator:
+    container_name: authenticator
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./:/code/
+    env_file:
+      - .env
+
+networks:
+  default:
+    external:
+      name: nginx-proxy
+
