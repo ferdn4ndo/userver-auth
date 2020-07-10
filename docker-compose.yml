@@ -1,7 +1,7 @@
 version: '3'
 services:
-  authenticator:
-    container_name: authenticator
+  userver-auth:
+    container_name: userver-auth
     restart: unless-stopped
     build:
       context: .
@@ -15,4 +15,3 @@ networks:
   default:
     external:
       name: nginx-proxy
-
