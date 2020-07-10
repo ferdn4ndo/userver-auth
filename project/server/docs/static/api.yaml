@@ -1,0 +1,127 @@
+openapi: 3.1.0
+info:
+  title: uServer-Auth
+  version: 1.0.0
+  contact:
+    name: Fernando Constantino
+    url: http://www.fconstantino.me/
+    email: "const.fernando@gmail.com"
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+paths:
+  /auth/system:
+    post:
+  /auth/register:
+    post:
+  /auth/login:
+    post:
+  /auth/me:
+    get:
+  /auth/logout:
+    post:
+
+
+  /auth/login:
+    get:
+      summary: List all pets
+      operationId: listPets
+      parameters:
+        - name: limit
+          in: query
+          description: How many items to return at one time (max 100)
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: A paged array of pets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pets"
+
+webhooks:
+  # Each webhook needs a name
+  newPet:
+    # This is a Path Item Object, the only difference is that the request is initiated by the API provider
+    post:
+      requestBody:
+        description: Information about a new pet in the system
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Pet"
+      responses:
+        "200":
+          description: Return a 200 status to indicate that the data was received successfully
+
+components:
+  schemas:
+    System:
+      required:
+        - name
+      properties:
+        id:
+          type: integer
+          format: int32
+          description: System identifier
+        name:
+          type: string
+          description: The name of the system
+        token:
+          type: string
+          description: A 32-byte token used to math the system as part of the login/register authentication
+        created_at:
+          type: string
+          description: Date when the system was created into the system
+
+    User:
+      required:
+        - system
+        - username
+        - password
+      properties:
+        uuid:
+          type: string
+          description: UUID of the user
+        system_name:
+          type: string
+          description: Name of the system which the user belongs to (and is able to log into)
+        username:
+          type: string
+          description: Username used to login
+        password:
+          type: string
+          description: Password used for login (will be retrieved as a hash)
+        registered_at:
+          type: string
+          description: Registration timestamp in ISO 8601 format (YYYY-MM-DDTHH:MM:SS.UUUU)
+        last_activity_at:
+          type: string
+          description: Last activity timestamp in ISO 8601 format (YYYY-MM-DDTHH:MM:SS.UUUU)
+
+    JWT:
+      required:
+        - exp
+        - iat
+        - sub
+      properties:
+        exp:
+          type: integer
+          format: int32
+
+  securitySchemes:
+    api_key:
+      type: apiKey
+      name: api_key
+      in: header
+    petstore_auth:
+      type: oauth2
+      flows:
+        implicit:
+          authorizationUrl: http://example.org/api/oauth/dialog
+          scopes:
+            write:pets: modify pets in your account
+            read:pets: read your pets
