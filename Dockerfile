@@ -38,5 +38,8 @@ RUN set -ex \
     && apk --purge del .build-deps \
     && rm -rf /tmp/requirements.txt
 
+ADD entrypoint.sh /code/entrypoint.sh
+ADD manage.py /code/manage.py
+
 EXPOSE 5000
 CMD ["/bin/sh", "entrypoint.sh"]

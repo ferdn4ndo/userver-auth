@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 if [ "${ENV_MODE}" == "prod" ]
 then
   echo "Starting in production mode..."
