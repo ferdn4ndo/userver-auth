@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from project.server import db
@@ -6,12 +7,12 @@ from project.tests.base import BaseTestCase
 
 
 class TestUserModel(BaseTestCase):
-    system_name = list(User.systems_token_dict.keys())[0]
+    system_name = 'testSystem'
 
     def test_encode_auth_token(self):
         user = User(
             username='joe@gmail.com',
-            system=self.system_name,
+            system_name=self.system_name,
             password='123456'
         )
         db.session.add(user)
@@ -24,7 +25,7 @@ class TestUserModel(BaseTestCase):
     def test_decode_auth_token(self):
         user = User(
             username='joe@gmail.com',
-            system=self.system_name,
+            system_name=self.system_name,
             password='123456'
         )
         db.session.add(user)
@@ -36,7 +37,7 @@ class TestUserModel(BaseTestCase):
         self.assertIn('expires_at', auth_token)
 
         decoded_token = User.decode_auth_token(auth_token['token'])
-        self.assertEqual(decoded_token, str(user.uuid))
+        self.assertEqual(decoded_token['sub'], str(user.uuid))
 
 
 if __name__ == '__main__':
