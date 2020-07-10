@@ -3,6 +3,7 @@
 
 import datetime
 import os
+import secrets
 
 import jwt
 import uuid
@@ -11,26 +12,39 @@ from project.server import app, db, bcrypt
 from sqlalchemy.dialects.postgresql import UUID
 
 
+class System(db.Model):
+    """
+    System model for storing system tokens used to select the login/registration destination
+    """
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(500), unique=True, nullable=False)
+    token = db.Column(db.String(500), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False)
+
+    def __init__(self, name):
+        self.name = name
+        self.token = secrets.token_urlsafe(32)
+        self.created_at = datetime.datetime.now()
+
+    def __repr__(self):
+        return '<system id={} name={} token={}>'.format(self.id, self.name, self.token)
+
+
 class User(db.Model):
     """ User Model for storing user related details """
     __tablename__ = "users"
 
-    systems_token_dict = {
-        'file-manager': os.environ['SYSTEM_AUTH_TOKEN_FILEMANAGER'],
-        'cscconsultoria': os.environ['SYSTEM_AUTH_TOKEN_CSCCONSULTORIA'],
-        'infotrem': os.environ['SYSTEM_AUTH_TOKEN_INFOTREM'],
-    }
-
     uuid = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, nullable=False)
-    system = db.Column(db.String(255), nullable=False)
+    system_name = db.Column(db.String(255), nullable=False)
     username = db.Column(db.String(255), nullable=False)
     password = db.Column(db.String(255), nullable=False)
     registered_at = db.Column(db.DateTime, nullable=False)
     last_activity_at = db.Column(db.DateTime, nullable=False)
     admin = db.Column(db.Boolean, nullable=False, default=False)
 
-    def __init__(self, system, username, password, admin=False):
-        self.system = system
+    def __init__(self, system_name, username, password, admin=False):
+        self.system_name = system_name
         self.username = username
         self.password = bcrypt.generate_password_hash(
             password, app.config.get('BCRYPT_LOG_ROUNDS')
@@ -63,7 +77,7 @@ class User(db.Model):
 
         return {
             'token': token.decode(),
-            'expires_at': datetime.datetime.strftime(exp_utc, '%Y-%m-%d %H:%M:%S')
+            'expires_at': exp_utc.isoformat()
         }
 
 
@@ -80,7 +94,7 @@ class User(db.Model):
             if is_blacklisted_token:
                 raise PermissionError('Token blacklisted. Please log in again.')
             else:
-                return payload['sub']
+                return payload
         except jwt.ExpiredSignatureError:
             raise PermissionError('Signature expired. Please log in again.')
         except jwt.InvalidTokenError:
@@ -89,17 +103,17 @@ class User(db.Model):
 
 class BlacklistToken(db.Model):
     """
-    Token Model for storing JWT tokens
+    Token Model for storing blacklisted JWT tokens
     """
     __tablename__ = 'blacklist_tokens'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     token = db.Column(db.String(500), unique=True, nullable=False)
-    blacklisted_on = db.Column(db.DateTime, nullable=False)
+    blacklisted_at = db.Column(db.DateTime, nullable=False)
 
     def __init__(self, token):
         self.token = token
-        self.blacklisted_on = datetime.datetime.now()
+        self.blacklisted_at = datetime.datetime.now()
 
     def __repr__(self):
         return '<id: token: {}'.format(self.token)
