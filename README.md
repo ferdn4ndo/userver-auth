@@ -21,7 +21,7 @@ docker-compose up --build
 Take a look at `setup.sh` and adjust it accordingly if needed, then run:
 
 ```sh
-docker exec -it authenticator sh -c "./setup.sh"
+docker exec -it userver-auth sh -c "./setup.sh"
 ```
 
 Access the application at the address [http://localhost:5000/](http://localhost:5000/) or any other environment configuration you made.
@@ -31,11 +31,11 @@ Access the application at the address [http://localhost:5000/](http://localhost:
 Without coverage:
 
 ```sh
-docker exec -it authenticator sh -c "python manage.py test"
+docker exec -it userver-auth sh -c "python manage.py test"
 ```
 
 With coverage:
 
 ```sh
-docker exec -it authenticator sh -c "python manage.py cov"
+docker exec -it userver-auth sh -c "python manage.py cov"
 ```
