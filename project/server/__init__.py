@@ -8,7 +8,7 @@ from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-app = Flask(__name__)
+app = Flask(__name__, static_url_path='/docs', static_folder='docs')
 CORS(app)
 
 app_settings = os.getenv('APP_SETTINGS', 'project.server.config.DevelopmentConfig')
@@ -25,6 +25,10 @@ db = SQLAlchemy(app)
 
 from project.server.auth.views import auth_blueprint
 app.register_blueprint(auth_blueprint)
+
+
+from project.server.docs.views import docs_blueprint
+app.register_blueprint(docs_blueprint)
 
 
 @app.errorhandler(429)
