@@ -41,9 +41,9 @@ class User(db.Model):
     password = db.Column(db.String(255), nullable=False)
     registered_at = db.Column(db.DateTime, nullable=False)
     last_activity_at = db.Column(db.DateTime, nullable=False)
-    admin = db.Column(db.Boolean, nullable=False, default=False)
+    is_admin = db.Column(db.Boolean, nullable=False, default=False)
 
-    def __init__(self, system_name, username, password, admin=False):
+    def __init__(self, system_name, username, password, is_admin=False):
         self.system_name = system_name
         self.username = username
         self.password = bcrypt.generate_password_hash(
@@ -51,7 +51,7 @@ class User(db.Model):
         ).decode()
         self.registered_at = datetime.datetime.now()
         self.last_activity_at = datetime.datetime.now()
-        self.admin = admin
+        self.is_admin = is_admin
 
     def update_last_activity(self):
         self.last_activity_at = datetime.datetime.now()

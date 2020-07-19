@@ -168,6 +168,7 @@ class MeAPI(MethodView):
             'username': user.username,
             'registered_at': user.registered_at.isoformat(),
             'last_activity_at': user.last_activity_at.isoformat(),
+            'is_admin': user.is_admin,
             'token': {
                 'expires_at': datetime.datetime.fromtimestamp(user_token['exp'], tz=tz.UTC).isoformat(),
                 'issued_at': datetime.datetime.fromtimestamp(user_token['iat'], tz=tz.UTC).isoformat(),
