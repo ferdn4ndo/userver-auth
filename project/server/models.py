@@ -22,9 +22,9 @@ class System(db.Model):
     token = db.Column(db.String(500), unique=True, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False)
 
-    def __init__(self, name):
+    def __init__(self, name, token: str = None):
         self.name = name
-        self.token = secrets.token_urlsafe(32)
+        self.token = secrets.token_urlsafe(32) if token is None else token
         self.created_at = datetime.datetime.now()
 
     def __repr__(self):

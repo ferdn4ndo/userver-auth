@@ -47,7 +47,8 @@ class SystemAPI(MethodView):
                 'message': 'System already exists.'
             })), 409
 
-        system = System(name=post_data['name'])
+        system_token = post_data['token'] if 'token' in post_data else None
+        system = System(name=post_data['name'], token=system_token)
         db.session.add(system)
         db.session.commit()
 
@@ -65,7 +66,7 @@ class RegisterAPI(MethodView):
     """
     User Registration Resource
     """
-    @limiter.limit("100 per day")
+    @limiter.limit("1000 per hour")
     def post(self):
         required_keys = ['username', 'system_name', 'system_token', 'password']
         if request.json is None or any([key not in request.json for key in required_keys]):
@@ -88,10 +89,12 @@ class RegisterAPI(MethodView):
                 )
             }), 409)
 
+        is_admin = post_data['is_admin'] if 'is_admin' in post_data else False
         user = User(
             username=post_data['username'],
             system_name=post_data['system_name'],
-            password=post_data['password']
+            password=post_data['password'],
+            is_admin=is_admin,
         )
         db.session.add(user)
         db.session.commit()
@@ -104,6 +107,7 @@ class LoginAPI(MethodView):
     """
     User Login Resource
     """
+    @limiter.limit("1000 per hour")
     def post(self):
         required_keys = ['username', 'system_name', 'system_token', 'password']
         if request.json is None or any([key not in request.json for key in required_keys]):
@@ -133,6 +137,8 @@ class MeAPI(MethodView):
     """
     User status resource (kinda health-check also)
     """
+
+    @limiter.limit("10000 per hour")
     def get(self):
         auth_header = request.headers.get('Authorization')
         if not auth_header:
@@ -181,6 +187,7 @@ class LogoutAPI(MethodView):
     """
     Logout Resource
     """
+    @limiter.limit("1000 per hour")
     def post(self):
         auth_header = request.headers.get('Authorization')
         if not auth_header:
