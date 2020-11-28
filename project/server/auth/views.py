@@ -100,7 +100,15 @@ class RegisterAPI(MethodView):
         db.session.commit()
 
         auth_token = user.encode_auth_token()
-        return make_response(jsonify(auth_token), 201)
+
+        response = {
+            'username': user.username,
+            'system_name': user.system_name,
+            'is_admin': user.is_admin,
+            'auth': auth_token,
+        }
+
+        return make_response(jsonify(response), 201)
 
 
 class LoginAPI(MethodView):
