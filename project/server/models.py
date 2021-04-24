@@ -56,13 +56,17 @@ class User(db.Model):
     def update_last_activity(self):
         self.last_activity_at = datetime.datetime.now()
 
-    def encode_auth_token(self):
+    def encode_auth_token(self, token_type="access"):
         """
         Generates the Auth Token
         :return: string
         """
-        exp_utc = datetime.datetime.utcnow() + datetime.timedelta(seconds=int(os.environ['JWT_EXP_DELTA_SECS']))
+
+        exp_secs = os.environ['JWT_EXP_DELTA_SECS'] if token_type == 'access' else os.environ['JWT_REFRESH_DELTA_SECS']
+
+        exp_utc = datetime.datetime.utcnow() + datetime.timedelta(seconds=int(exp_secs))
         payload = {
+            'typ': token_type.upper(),
             'exp': exp_utc,
             'iat': datetime.datetime.utcnow(),
             'sub': str(self.uuid)
@@ -80,12 +84,12 @@ class User(db.Model):
             'expires_at': exp_utc.isoformat()
         }
 
-
     @staticmethod
-    def decode_auth_token(auth_token):
+    def decode_auth_token(auth_token, token_type="access"):
         """
         Validates the auth token
         :param auth_token:
+        :param token_type: access|refresh
         :return: integer|string
         """
         try:
@@ -93,6 +97,12 @@ class User(db.Model):
             is_blacklisted_token = BlacklistToken.check_blacklist(auth_token)
             if is_blacklisted_token:
                 raise PermissionError('Token blacklisted. Please log in again.')
+            elif payload['typ'] != token_type.upper():
+                raise PermissionError(
+                    'Wrong token type! Tried to authenticate using {} token, expected {} one.'.format(
+                        payload['typ'], token_type
+                    )
+                )
             else:
                 return payload
         except jwt.ExpiredSignatureError:

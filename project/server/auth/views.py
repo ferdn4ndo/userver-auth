@@ -6,9 +6,55 @@ from flask import Blueprint, request, make_response, jsonify
 from flask.views import MethodView
 
 from project.server import bcrypt, db, limiter
+from project.server.auth.errors import BadRequestError, ConflictError, UnauthorizedError
 from project.server.models import User, BlacklistToken, System
 
 auth_blueprint = Blueprint('auth', __name__)
+
+
+def get_authorization_token(request, word='Bearer') -> str:
+    auth_header = request.headers.get('Authorization')
+    if not auth_header:
+        raise UnauthorizedError('No authorization header provided.')
+
+    header_parts = auth_header.split(" ")
+    if len(header_parts) != 2:
+        raise UnauthorizedError('Malformed authorization header.')
+
+    if str(header_parts[0]).upper() != word.upper():
+        raise UnauthorizedError('Authorization header must use {} word before the token.'.format(word))
+
+    return str(header_parts[1])
+
+
+def get_user_from_token(auth_token) -> User:
+    user_token = User.decode_auth_token(auth_token)
+    user = User.query.filter_by(uuid=user_token['sub']).first()
+    if not user:
+        blacklist_token = BlacklistToken(token=auth_token)
+        db.session.add(blacklist_token)
+        db.session.commit()
+        raise UnauthorizedError('User is unknown.')
+
+    return user
+
+
+def check_request_body_keys(request, required_keys):
+    if request.json is None or any([key not in request.json for key in required_keys]):
+        fields_str = "['{}']".format("', '".join(required_keys))
+        raise BadRequestError("The fields {} are required (in JSON format)!".format(fields_str))
+
+
+def create_system(data) -> System:
+    system = System.query.filter_by(name=data['name']).first()
+    if system is not None:
+        raise ConflictError('System already exists.')
+
+    system_token = data['token'] if 'token' in data else None
+    system = System(name=data['name'], token=system_token)
+    db.session.add(system)
+    db.session.commit()
+    return system
 
 
 class SystemAPI(MethodView):
@@ -17,49 +63,26 @@ class SystemAPI(MethodView):
     """
     @limiter.limit("100 per day")
     def post(self):
-        auth_header = request.headers.get('Authorization')
-        if not auth_header:
-            return make_response(jsonify({
-                'message': 'No authorization header provided.'
-            }), 401)
-
         try:
-            auth_type, auth_token = auth_header.split()
-            if str(auth_type).lower() != "token" or auth_token != os.environ['SYSTEM_CREATION_TOKEN']:
-                return make_response(jsonify({
-                    'message': 'Invalid authorization token.'
-                })), 401
-        except ValueError:
-            return make_response(jsonify({
-                'message': 'Malformed token authorization header.'
-            })), 401
+            if get_authorization_token(request, 'Token') != os.environ['SYSTEM_CREATION_TOKEN']:
+                raise UnauthorizedError('Invalid system creation authorization token')
+            check_request_body_keys(request, ['name'])
+            system = create_system(request.json)
+            response = {
+                'id': system.id,
+                'name': system.name,
+                'token': system.token,
+                'created_at': system.created_at.isoformat(),
+            }
 
-        required_keys = ['name']
-        if request.json is None or any([key not in request.json for key in required_keys]):
-            return make_response(jsonify({
-                'message': "The fields ['{}'] are required (in JSON format)!".format("', '".join(required_keys))
-            }), 400)
-        post_data = request.json
+            return make_response(jsonify(response), 201)
 
-        system = System.query.filter_by(name=post_data['name']).first()
-        if system is not None:
-            return make_response(jsonify({
-                'message': 'System already exists.'
-            })), 409
-
-        system_token = post_data['token'] if 'token' in post_data else None
-        system = System(name=post_data['name'], token=system_token)
-        db.session.add(system)
-        db.session.commit()
-
-        response = {
-            'id': system.id,
-            'name': system.name,
-            'token': system.token,
-            'created_at': system.created_at.isoformat(),
-        }
-
-        return make_response(jsonify(response), 201)
+        except BadRequestError as e:
+            return make_response(jsonify({'message': str(e)})), 400
+        except UnauthorizedError as e:
+            return make_response(jsonify({'message': str(e)})), 401
+        except ConflictError as e:
+            return make_response(jsonify({'message': str(e)})), 409
 
 
 class RegisterAPI(MethodView):
@@ -68,11 +91,26 @@ class RegisterAPI(MethodView):
     """
     @limiter.limit("1000 per hour")
     def post(self):
-        required_keys = ['username', 'system_name', 'system_token', 'password']
-        if request.json is None or any([key not in request.json for key in required_keys]):
-            return make_response(jsonify({
-                'message': "The fields ['{}'] are required (in JSON format)!".format("', '".join(required_keys))
-            }), 400)
+        try:
+            check_request_body_keys(request, ['username', 'system_name', 'system_token', 'password'])
+            post_data = request.json
+
+            system = System.query.filter_by(name=post_data['system_name']).first()
+            if system is None or system.token != post_data['system_token']:
+                raise UnauthorizedError("Invalid system/token pair.")
+
+            user = User.query.filter_by(username=post_data['username'], system_name=post_data['system_name']).first()
+            if user is not None:
+                raise ConflictError("Username '{}' already registered for system '{}'!".format(
+                    post_data['username'], post_data['system_name']
+                ))
+
+        except BadRequestError as e:
+            return make_response(jsonify({'message': str(e)})), 400
+        except UnauthorizedError as e:
+            return make_response(jsonify({'message': str(e)})), 401
+        except ConflictError as e:
+            return make_response(jsonify({'message': str(e)})), 409
 
         post_data = request.json
         system = System.query.filter_by(name=post_data['system_name']).first()
@@ -100,7 +138,6 @@ class RegisterAPI(MethodView):
         db.session.commit()
 
         auth_token = user.encode_auth_token()
-
         response = {
             'username': user.username,
             'system_name': user.system_name,
@@ -117,28 +154,46 @@ class LoginAPI(MethodView):
     """
     @limiter.limit("1000 per hour")
     def post(self):
-        required_keys = ['username', 'system_name', 'system_token', 'password']
-        if request.json is None or any([key not in request.json for key in required_keys]):
+        try:
+            check_request_body_keys(request, ['username', 'system_name', 'system_token', 'password'])
+            post_data = request.json
+
+            system = System.query.filter_by(name=post_data['system_name']).first()
+            if system is None or system.token != post_data['system_token']:
+                raise UnauthorizedError("Invalid system/token pair.")
+
+            user = User.query.filter_by(username=post_data['username'], system_name=post_data['system_name']).first()
+            if not user or not bcrypt.check_password_hash(user.password, post_data['password']):
+                raise UnauthorizedError('Incorrect user credentials.')
+
+            access_token = user.encode_auth_token('access')
+            refresh_token = user.encode_auth_token('refresh')
             return make_response(jsonify({
-                'message': "The fields ['{}'] are required (in JSON format)!".format("', '".join(required_keys))
-            }), 400)
+                'access_token': access_token['token'],
+                'access_token_exp': access_token['expires_at'],
+                'refresh_token': refresh_token['token'],
+                'refresh_token_exp': refresh_token['expires_at'],
+            }), 200)
+        except BadRequestError as e:
+            return make_response(jsonify({'message': str(e)})), 400
+        except UnauthorizedError as e:
+            return make_response(jsonify({'message': str(e)})), 401
 
-        post_data = request.json
 
-        system = System.query.filter_by(name=post_data['system_name']).first()
-        if system is None or system.token != post_data['system_token']:
-            return make_response(jsonify({
-                'message': "Invalid system/token pair."
-            }), 401)
+class RefreshTokenAPI(MethodView):
+    """
+    Used to refresh the AccessToken using a valid RefreshToken
+    """
+    @limiter.limit("1000 per hour")
+    def post(self):
+        try:
+            token = get_authorization_token(request)
+            user = get_user_from_token(token)
+            new_auth_token = user.encode_auth_token()
+            return make_response(jsonify(new_auth_token), 200)
 
-        user = User.query.filter_by(username=post_data['username'], system_name=post_data['system_name']).first()
-        if not user or not bcrypt.check_password_hash(user.password, post_data['password']):
-            return make_response(jsonify({
-                'message': "Invalid user id/password pair."
-            }), 401)
-
-        auth_token = user.encode_auth_token()
-        return make_response(jsonify(auth_token), 200)
+        except PermissionError as e:
+            return make_response(jsonify({'message': str(e)})), 401
 
 
 class MeAPI(MethodView):
@@ -148,32 +203,11 @@ class MeAPI(MethodView):
 
     @limiter.limit("10000 per hour")
     def get(self):
-        auth_header = request.headers.get('Authorization')
-        if not auth_header:
-            return make_response(jsonify({
-                'message': 'No authorization header provided.'
-            }), 401)
-
         try:
-            auth_token = auth_header.split(" ")[1]
-            user_token = User.decode_auth_token(auth_token)
-        except IndexError:
-            return make_response(jsonify({
-                'message': 'Malformed Bearer authorization header.'
-            })), 401
+            auth_token = get_authorization_token(request=request)
+            user = get_user_from_token(auth_token=auth_token)
         except PermissionError as e:
-            return make_response(jsonify({
-                'message': str(e)
-            })), 401
-
-        user = User.query.filter_by(uuid=user_token['sub']).first()
-        if not User:
-            blacklist_token = BlacklistToken(token=auth_token)
-            db.session.add(blacklist_token)
-            db.session.commit()
-            return make_response(jsonify({
-                'message': 'User unknown.'
-            })), 401
+            return make_response(jsonify({'message': str(e)})), 401
 
         user.update_last_activity()
         response_dict = {
@@ -183,10 +217,6 @@ class MeAPI(MethodView):
             'registered_at': user.registered_at.isoformat(),
             'last_activity_at': user.last_activity_at.isoformat(),
             'is_admin': user.is_admin,
-            'token': {
-                'expires_at': datetime.datetime.fromtimestamp(user_token['exp'], tz=tz.UTC).isoformat(),
-                'issued_at': datetime.datetime.fromtimestamp(user_token['iat'], tz=tz.UTC).isoformat(),
-            },
         }
         return make_response(jsonify(response_dict), 200)
 
