@@ -9,23 +9,25 @@ from project.tests.base import BaseTestCase
 
 
 class TestAuthBlueprint(BaseTestCase):
-    system_name = 'testSystem'
-    system_creation_token = os.environ['SYSTEM_CREATION_TOKEN']
+    DEFAULT_SYSTEM_NAME = 'testSystem'
+    DEFAULT_SYSTEM_CREATION_TOKEN = os.environ['SYSTEM_CREATION_TOKEN']
+    DEFAULT_USER_EMAIL = 'joe@test.lan'
+    DEFAULT_USER_PASSWORD = '123456@a'
 
     def create_system(self, **kwargs):
         return self.client.post(
             '/auth/system',
             data=json.dumps(kwargs),
             headers={
-                'Authorization': 'Token {}'.format(self.system_creation_token)
+                'Authorization': 'Token {}'.format(self.DEFAULT_SYSTEM_CREATION_TOKEN)
             },
             content_type='application/json',
         )
 
     def get_system_token(self):
-        system = System.query.filter_by(name=self.system_name).first()
+        system = System.query.filter_by(name=self.DEFAULT_SYSTEM_NAME).first()
         if system is None:
-            system = System(name=self.system_name)
+            system = System(name=self.DEFAULT_SYSTEM_NAME)
         db.session.add(system)
         db.session.commit()
         return system.token
@@ -39,10 +41,10 @@ class TestAuthBlueprint(BaseTestCase):
 
     def register_default_user(self):
         return self.register_user(
-            username='joe@gmail.com',
-            system_name=self.system_name,
+            username=self.DEFAULT_USER_EMAIL,
+            system_name=self.DEFAULT_SYSTEM_NAME,
             system_token=self.get_system_token(),
-            password='123456'
+            password=self.DEFAULT_USER_PASSWORD
         )
 
     def login_user(self, **kwargs):
@@ -54,17 +56,17 @@ class TestAuthBlueprint(BaseTestCase):
 
     def login_default_user(self):
         return self.login_user(
-            username='joe@gmail.com',
-            system_name=self.system_name,
+            username=self.DEFAULT_USER_EMAIL,
+            system_name=self.DEFAULT_SYSTEM_NAME,
             system_token=self.get_system_token(),
-            password='123456'
+            password=self.DEFAULT_USER_PASSWORD
         )
 
     def get_me_response(self, token=None):
         return self.client.get(
             '/auth/me',
             headers={
-                'Authorization': 'Token {}'.format(token)
+                'Authorization': 'Bearer {}'.format(token)
             },
             content_type='application/json',
         )
@@ -78,7 +80,7 @@ class TestAuthBlueprint(BaseTestCase):
     def test_system_create_successful(self):
         """ Test for a successful system creation """
         with self.client:
-            response = self.create_system(name=self.system_name)
+            response = self.create_system(name=self.DEFAULT_SYSTEM_NAME)
             self.assertEqual(response.status_code, 201)
             self.assertEqual(response.content_type, 'application/json')
 
@@ -143,24 +145,30 @@ class TestAuthBlueprint(BaseTestCase):
             self.assertTrue(response.content_type == 'application/json')
 
             data = json.loads(response.data.decode())
-            self.assertTrue('token' in data)
-            self.assertTrue(data['token'])
-            self.assertTrue('expires_at' in data)
-            self.assertTrue(data['expires_at'])
+            self.assertTrue('auth' in data)
+            self.assertTrue('access_token' in data['auth'])
+            self.assertTrue('access_token_exp' in data['auth'])
+            self.assertTrue('refresh_token' in data['auth'])
+            self.assertTrue('refresh_token_exp' in data['auth'])
+            self.assertTrue('is_admin' in data)
+            self.assertTrue('system_name' in data)
+            self.assertEqual(self.DEFAULT_SYSTEM_NAME, data['system_name'])
+            self.assertTrue('username' in data)
+            self.assertEqual(self.DEFAULT_USER_EMAIL, data['username'])
 
     def test_user_register_missing_field(self):
         """ Test registration with a missing field """
         user = User(
-            username='joe@gmail.com',
-            system_name=self.system_name,
+            username=self.DEFAULT_USER_EMAIL,
+            system_name=self.DEFAULT_SYSTEM_NAME,
             password='test'
         )
         db.session.add(user)
         db.session.commit()
         with self.client:
             response = self.register_user(
-                username='joe@gmail.com',
-                system_name=self.system_name,
+                username=self.DEFAULT_USER_EMAIL,
+                system_name=self.DEFAULT_SYSTEM_NAME,
                 system_token=self.get_system_token(),
             )
             self.assertEqual(response.status_code, 400)
@@ -173,10 +181,10 @@ class TestAuthBlueprint(BaseTestCase):
         """ Test registration with an invalid system token """
         with self.client:
             response = self.register_user(
-                username='joe@gmail.com',
-                system_name=self.system_name,
+                username=self.DEFAULT_USER_EMAIL,
+                system_name=self.DEFAULT_SYSTEM_NAME,
                 system_token='my_precious',
-                password='123456'
+                password=self.DEFAULT_USER_PASSWORD
             )
             self.assertEqual(response.status_code, 401)
             self.assertTrue(response.content_type == 'application/json')
@@ -187,18 +195,18 @@ class TestAuthBlueprint(BaseTestCase):
     def test_user_register_already_registered(self):
         """ Test registration with already registered user """
         user = User(
-            username='joe@gmail.com',
-            system_name=self.system_name,
+            username=self.DEFAULT_USER_EMAIL,
+            system_name=self.DEFAULT_SYSTEM_NAME,
             password='test'
         )
         db.session.add(user)
         db.session.commit()
         with self.client:
             response = self.register_user(
-                username='joe@gmail.com',
-                system_name=self.system_name,
+                username=self.DEFAULT_USER_EMAIL,
+                system_name=self.DEFAULT_SYSTEM_NAME,
                 system_token=self.get_system_token(),
-                password='123456'
+                password=self.DEFAULT_USER_PASSWORD
             )
             data = json.loads(response.data.decode())
             self.assertEqual(response.status_code, 409)
@@ -214,11 +222,17 @@ class TestAuthBlueprint(BaseTestCase):
             self.assertTrue(resp_register.content_type == 'application/json')
 
             data_register = json.loads(resp_register.data.decode())
-            self.assertTrue(data_register['token'])
-            self.assertTrue(data_register['expires_at'])
+            self.assertIn('auth', data_register)
+            self.assertIn('access_token', data_register['auth'])
+            self.assertIn('access_token_exp', data_register['auth'])
+            self.assertIn('refresh_token', data_register['auth'])
+            self.assertIn('refresh_token_exp', data_register['auth'])
+            self.assertIn('is_admin', data_register)
+            self.assertIn('system_name', data_register)
+            self.assertIn('username', data_register)
 
             # registered user login
-            response = self.get_me_response(token=data_register['token'])
+            response = self.get_me_response(token=data_register['auth']['access_token'])
             self.assertEqual(response.status_code, 200)
             self.assertTrue(response.content_type == 'application/json')
 
@@ -234,9 +248,6 @@ class TestAuthBlueprint(BaseTestCase):
             self.assertEqual(user.system_name, data['system_name'])
             self.assertIn('username', data)
             self.assertEqual(user.username, data['username'])
-            self.assertIn('token', data)
-            self.assertIn('expires_at', data['token'])
-            self.assertIn('issued_at', data['token'])
 
     def test_user_login_not_registered(self):
         """ Test for login of non-registered user """
@@ -254,8 +265,8 @@ class TestAuthBlueprint(BaseTestCase):
             self.register_default_user()
 
             response = self.login_user(
-                username='joe@gmail.com',
-                system_name=self.system_name,
+                username=self.DEFAULT_USER_EMAIL,
+                system_name=self.DEFAULT_SYSTEM_NAME,
                 system_token=self.get_system_token(),
                 password='my_precious'
             )
@@ -271,10 +282,10 @@ class TestAuthBlueprint(BaseTestCase):
             self.register_default_user()
 
             response = self.login_user(
-                username='joe@gmail.com',
-                system_name=self.system_name,
+                username=self.DEFAULT_USER_EMAIL,
+                system_name=self.DEFAULT_SYSTEM_NAME,
                 system_token='my_precious',
-                password='123456'
+                password=self.DEFAULT_USER_PASSWORD
             )
             self.assertEqual(response.status_code, 401)
             self.assertTrue(response.content_type == 'application/json')
@@ -286,7 +297,7 @@ class TestAuthBlueprint(BaseTestCase):
         """ Test for user status """
         with self.client:
             resp_register = self.register_default_user()
-            response = self.get_me_response(token=json.loads(resp_register.data.decode())['token'])
+            response = self.get_me_response(token=json.loads(resp_register.data.decode())['auth']['access_token'])
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.content_type, 'application/json')
 
@@ -356,10 +367,93 @@ class TestAuthBlueprint(BaseTestCase):
             self.assertEqual(resp_login.status_code, 200)
             self.assertEqual(resp_login.content_type, 'application/json')
 
-            token = json.loads(resp_login.data.decode())['token']
+            token = json.loads(resp_login.data.decode())['access_token']
             self.blacklist_token(token)
             response = self.client.get(
                 '/auth/me',
+                headers={
+                    'Authorization': 'Bearer ' + token
+                }
+            )
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(response.content_type, 'application/json')
+            data = json.loads(response.data.decode())
+            self.assertIn('message', data)
+
+    def test_user_refresh_token_successful(self):
+        """ Test for user refresh token """
+        with self.client:
+            resp_register = self.register_default_user()
+            refresh_token = json.loads(resp_register.data.decode())['auth']['refresh_token']
+            response = self.client.post(
+                '/auth/refresh',
+                headers={
+                    'Authorization': 'Bearer {}'.format(refresh_token)
+                },
+                content_type='application/json',
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.content_type, 'application/json')
+
+            data = json.loads(response.data.decode())
+            self.assertIn('access_token', data)
+            self.assertIn('access_token_exp', data)
+            self.assertIn('refresh_token', data)
+            self.assertIn('refresh_token_exp', data)
+
+    def test_user_refresh_token_malformed_bearer_token(self):
+        """ Test for user refresh token with malformed bearer token"""
+        with self.client:
+            resp_register = self.register_default_user()
+            response = self.client.post(
+                '/auth/refresh',
+                headers={
+                    'Authorization': 'Bearer'
+                }
+            )
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(response.content_type, 'application/json')
+            data = json.loads(response.data.decode())
+            self.assertIn('message', data)
+
+    def test_user_refresh_token_no_auth_header(self):
+        """ Test for user refresh token with no authorization header"""
+        with self.client:
+            resp_register = self.register_default_user()
+            response = self.client.post(
+                '/auth/refresh',
+                headers={}
+            )
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(response.content_type, 'application/json')
+            data = json.loads(response.data.decode())
+            self.assertIn('message', data)
+
+    def test_user_refresh_token_invalid_token(self):
+        """ Test for user refresh token with an invalid bearer token"""
+        with self.client:
+            resp_register = self.register_default_user()
+            response = self.client.post(
+                '/auth/refresh',
+                headers={
+                    'Authorization': 'Bearer my_precious'
+                }
+            )
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(response.content_type, 'application/json')
+            data = json.loads(response.data.decode())
+            self.assertIn('message', data)
+
+    def test_user_refersh_token_blacklisted_token(self):
+        """ Test for user status with an invalid bearer token"""
+        with self.client:
+            resp_register = self.register_default_user()
+            self.assertEqual(resp_register.status_code, 201)
+
+            token = json.loads(resp_register.data.decode())['auth']['refresh_token']
+            self.blacklist_token(token)
+            response = self.client.post(
+                '/auth/refresh',
                 headers={
                     'Authorization': 'Bearer ' + token
                 }
@@ -382,7 +476,7 @@ class TestAuthBlueprint(BaseTestCase):
             response = self.client.post(
                 '/auth/logout',
                 headers={
-                    'Authorization': 'Bearer ' + json.loads(resp_login.data.decode())['token']
+                    'Authorization': 'Bearer ' + json.loads(resp_login.data.decode())['access_token']
                 }
             )
             self.assertEqual(response.status_code, 204)
@@ -441,7 +535,7 @@ class TestAuthBlueprint(BaseTestCase):
             self.assertEqual(resp_login.status_code, 200)
             self.assertEqual(resp_login.content_type, 'application/json')
 
-            token = json.loads(resp_login.data.decode())['token']
+            token = json.loads(resp_login.data.decode())['access_token']
             self.blacklist_token(token)
             response = self.client.post(
                 '/auth/logout',

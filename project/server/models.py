@@ -2,14 +2,15 @@
 
 
 import datetime
+import jwt
 import os
 import secrets
-
-import jwt
 import uuid
 
-from project.server import app, db, bcrypt
 from sqlalchemy.dialects.postgresql import UUID
+
+from project.server import app, db, bcrypt
+from project.server.auth.errors import UnauthorizedError
 
 
 class System(db.Model):
@@ -56,12 +57,7 @@ class User(db.Model):
     def update_last_activity(self):
         self.last_activity_at = datetime.datetime.now()
 
-    def encode_auth_token(self, token_type="access"):
-        """
-        Generates the Auth Token
-        :return: string
-        """
-
+    def prepare_jwt(self, token_type="access"):
         exp_secs = os.environ['JWT_EXP_DELTA_SECS'] if token_type == 'access' else os.environ['JWT_REFRESH_DELTA_SECS']
 
         exp_utc = datetime.datetime.utcnow() + datetime.timedelta(seconds=int(exp_secs))
@@ -71,17 +67,28 @@ class User(db.Model):
             'iat': datetime.datetime.utcnow(),
             'sub': str(self.uuid)
         }
-        token = jwt.encode(
+        return jwt.encode(
             payload,
             app.config.get('SECRET_KEY'),
             algorithm='HS256'
-        )
+        ), exp_utc.isoformat()
+
+    def encode_auth_token(self):
+        """
+        Generates the Auth Token
+        :return: string
+        """
+
+        access_token, access_token_exp = self.prepare_jwt('access')
+        refresh_token, refresh_token_exp = self.prepare_jwt('refresh')
 
         self.update_last_activity()
 
         return {
-            'token': token.decode(),
-            'expires_at': exp_utc.isoformat()
+            'access_token': access_token,
+            'access_token_exp': access_token_exp,
+            'refresh_token': refresh_token,
+            'refresh_token_exp': refresh_token_exp,
         }
 
     @staticmethod
@@ -93,12 +100,12 @@ class User(db.Model):
         :return: integer|string
         """
         try:
-            payload = jwt.decode(auth_token, app.config.get('SECRET_KEY'))
+            payload = jwt.decode(auth_token, app.config.get('SECRET_KEY'), algorithms=['HS256'])
             is_blacklisted_token = BlacklistToken.check_blacklist(auth_token)
             if is_blacklisted_token:
-                raise PermissionError('Token blacklisted. Please log in again.')
+                raise UnauthorizedError('Token blacklisted. Please log in again.')
             elif payload['typ'] != token_type.upper():
-                raise PermissionError(
+                raise UnauthorizedError(
                     'Wrong token type! Tried to authenticate using {} token, expected {} one.'.format(
                         payload['typ'], token_type
                     )
@@ -106,9 +113,9 @@ class User(db.Model):
             else:
                 return payload
         except jwt.ExpiredSignatureError:
-            raise PermissionError('Signature expired. Please log in again.')
+            raise UnauthorizedError('Signature expired. Please log in again.')
         except jwt.InvalidTokenError:
-            raise PermissionError('Invalid token. Please log in again.')
+            raise UnauthorizedError('Invalid token. Please log in again.')
 
 
 class BlacklistToken(db.Model):
