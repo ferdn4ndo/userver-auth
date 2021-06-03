@@ -1,5 +1,6 @@
 import os
 
+from datetime import datetime
 from flask import Blueprint, request, make_response, jsonify
 from flask.views import MethodView
 
@@ -8,6 +9,15 @@ from project.server.auth.errors import BadRequestError, ConflictError, Unauthori
 from project.server.models import User, BlacklistToken, System
 
 auth_blueprint = Blueprint('auth', __name__)
+
+
+def parse_token_data(auth_token, token_type="access"):
+    token_data = User.decode_auth_token(auth_token, token_type)
+
+    return {
+        "issued_at": datetime.utcfromtimestamp(token_data['iat']).isoformat('T', 'milliseconds')+ 'Z',
+        "expires_at": datetime.utcfromtimestamp(token_data['exp']).isoformat('T', 'milliseconds')+ 'Z',
+    }
 
 
 def get_authorization_token(request_obj, word='Bearer') -> str:
@@ -82,7 +92,7 @@ class SystemAPI(MethodView):
                 'id': system.id,
                 'name': system.name,
                 'token': system.token,
-                'created_at': system.created_at.isoformat(),
+                'created_at': system.created_at.isoformat('T', 'milliseconds')+ 'Z',
             }
 
             return make_response(jsonify(response), 201)
@@ -211,9 +221,10 @@ class MeAPI(MethodView):
                 'uuid': user.uuid,
                 'system_name': user.system_name,
                 'username': user.username,
-                'registered_at': user.registered_at.isoformat(),
-                'last_activity_at': user.last_activity_at.isoformat(),
+                'registered_at': user.registered_at.isoformat('T', 'milliseconds')+ 'Z',
+                'last_activity_at': user.last_activity_at.isoformat('T', 'milliseconds')+ 'Z',
                 'is_admin': user.is_admin,
+                'token': parse_token_data(auth_token),
             }
             return make_response(jsonify(response_dict), 200)
 
