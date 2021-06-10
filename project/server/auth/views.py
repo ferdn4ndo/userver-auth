@@ -210,7 +210,6 @@ class MeAPI(MethodView):
     """
     User status resource (kinda health-check also)
     """
-
     @limiter.limit("10000 per hour")
     def get(self):
         try:
@@ -226,6 +225,37 @@ class MeAPI(MethodView):
                 'is_admin': user.is_admin,
                 'token': parse_token_data(auth_token),
             }
+            return make_response(jsonify(response_dict), 200)
+
+        except UnauthorizedError as e:
+            return make_response(jsonify({'message': str(e)})), 401
+
+
+class SystemUserAPI(MethodView):
+    """
+    Retrieve info about a user from a system
+    """
+    @limiter.limit("10000 per hour")
+    def get(self, system_name, username):
+        try:
+            auth_token = get_authorization_token(request)
+            logged_user = get_user_from_token(auth_token=auth_token)
+            logged_user.update_last_activity()
+
+            user = User.query.filter_by(system_name=system_name, username=username).first()
+            if not user:
+                return make_response(jsonify({
+                    'message': 'Username {} not found for system {}!'.format(username, system_name)
+                })), 404
+
+            response_dict = {
+                'uuid': user.uuid,
+                'system_name': user.system_name,
+                'username': user.username,
+                'registered_at': user.registered_at.isoformat('T', 'milliseconds')+ 'Z',
+                'last_activity_at': user.last_activity_at.isoformat('T', 'milliseconds')+ 'Z',
+            }
+
             return make_response(jsonify(response_dict), 200)
 
         except UnauthorizedError as e:
@@ -260,6 +290,7 @@ registration_view = RegisterAPI.as_view('register_api')
 login_view = LoginAPI.as_view('login_api')
 refresh_view = RefreshTokenAPI.as_view('refresh_api')
 me_view = MeAPI.as_view('user_api')
+system_user_view = SystemUserAPI.as_view('system_user_api')
 logout_view = LogoutAPI.as_view('logout_api')
 
 # add Rules for API Endpoints
@@ -286,6 +317,11 @@ auth_blueprint.add_url_rule(
 auth_blueprint.add_url_rule(
     '/auth/me',
     view_func=me_view,
+    methods=['GET']
+)
+auth_blueprint.add_url_rule(
+    '/auth/systems/<system_name>/users/<username>',
+    view_func=system_user_view,
     methods=['GET']
 )
 auth_blueprint.add_url_rule(
