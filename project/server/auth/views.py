@@ -254,6 +254,7 @@ class SystemUserAPI(MethodView):
                 'username': user.username,
                 'registered_at': user.registered_at.isoformat('T', 'milliseconds')+ 'Z',
                 'last_activity_at': user.last_activity_at.isoformat('T', 'milliseconds')+ 'Z',
+                'is_admin': user.is_admin,
             }
 
             return make_response(jsonify(response_dict), 200)
