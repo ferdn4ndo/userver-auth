@@ -1,4 +1,4 @@
-FROM python:3-alpine
+FROM python:3.7-alpine3.13
 LABEL maintaner="Fernando Constantino <const.fernando@gmail.com>"
 
 # Setting PYTHONUNBUFFERED to a non empty value ensures that the python output is sent straight to terminal (e.g. your
