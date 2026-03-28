@@ -1,4 +1,3 @@
-version: '3'
 services:
   userver-auth:
     container_name: userver-auth
@@ -13,5 +12,5 @@ services:
 
 networks:
   default:
-    external:
-      name: nginx-proxy
+    name: nginx-proxy
+    external: true
