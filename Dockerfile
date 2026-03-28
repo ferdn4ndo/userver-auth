@@ -1,5 +1,17 @@
 FROM python:3.14-alpine
+
+ARG BUILD_DATE=unknown
+ARG BUILD_VERSION=unknown
+ARG VCS_REF=unknown
+
 LABEL maintainer="Fernando Constantino <const.fernando@gmail.com>"
+LABEL org.opencontainers.image.title="userver-auth"
+LABEL org.opencontainers.image.description="JWT authentication microservice (Flask / PostgreSQL)"
+LABEL org.opencontainers.image.url="https://github.com/ferdn4ndo/userver-auth"
+LABEL org.opencontainers.image.source="https://github.com/ferdn4ndo/userver-auth"
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+LABEL org.opencontainers.image.version="${BUILD_VERSION}"
+LABEL org.opencontainers.image.revision="${VCS_REF}"
 
 # Setting PYTHONUNBUFFERED to a non empty value ensures that the python output is sent straight to terminal (e.g. your
 # container log) without being first buffered and that you can see the output of your application (e.g. django logs) in
@@ -12,8 +24,7 @@ ENV FLASK_APP=manage:app
 
 WORKDIR /code/
 
-# Copy in your requirements file
-ADD requirements.txt /code/requirements.txt
+COPY requirements.txt /code/requirements.txt
 
 ENV LIBRARY_PATH=/lib:/usr/lib
 
@@ -38,6 +49,9 @@ RUN set -ex \
     && pip install --no-cache-dir -r /code/requirements.txt \
     && apk --purge del .build-deps \
     && rm -rf /tmp/requirements.txt
+
+# Application source (after deps layer for better cache)
+COPY . /code/
 
 EXPOSE 5000
 CMD ["/bin/bash", "entrypoint.sh"]

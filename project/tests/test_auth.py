@@ -8,6 +8,11 @@ from project.server.models import User, BlacklistToken, System
 from project.tests.base import BaseTestCase
 
 
+def _api_datetime(dt):
+    """Datetime strings returned by auth JSON responses (see project.server.auth.views)."""
+    return dt.isoformat('T', 'milliseconds') + 'Z'
+
+
 class TestAuthBlueprint(BaseTestCase):
     DEFAULT_SYSTEM_NAME = 'testSystem'
     DEFAULT_SYSTEM_CREATION_TOKEN = os.environ['SYSTEM_CREATION_TOKEN']
@@ -92,10 +97,7 @@ class TestAuthBlueprint(BaseTestCase):
             self.assertIn('token', data)
             self.assertEqual(data['token'], system.token)
             self.assertIn('created_at', data)
-            self.assertEqual(
-                data['created_at'],
-                system.created_at.isoformat()
-            )
+            self.assertEqual(data['created_at'], _api_datetime(system.created_at))
 
     def test_system_create_malformed_bearer_token(self):
         """ Test for a system creation with malformed token"""
@@ -241,9 +243,9 @@ class TestAuthBlueprint(BaseTestCase):
             user = User.query.filter_by(uuid=data['uuid']).first()
             if user.last_activity_at is not None:
                 self.assertIn('last_activity_at', data)
-                self.assertEqual(user.last_activity_at.isoformat(), data['last_activity_at'])
+                self.assertEqual(data['last_activity_at'], _api_datetime(user.last_activity_at))
             self.assertIn('registered_at', data)
-            self.assertEqual(user.registered_at.isoformat(), data['registered_at'])
+            self.assertEqual(data['registered_at'], _api_datetime(user.registered_at))
             self.assertIn('system_name', data)
             self.assertEqual(user.system_name, data['system_name'])
             self.assertIn('username', data)
@@ -309,10 +311,10 @@ class TestAuthBlueprint(BaseTestCase):
             self.assertIn('username', data)
             self.assertEqual(data['username'], user.username)
             self.assertIn('registered_at', data)
-            self.assertEqual(data['registered_at'], user.registered_at.isoformat())
+            self.assertEqual(data['registered_at'], _api_datetime(user.registered_at))
             if user.last_activity_at is not None:
                 self.assertIn('last_activity_at', data)
-                self.assertEqual(data['last_activity_at'], user.last_activity_at.isoformat())
+                self.assertEqual(data['last_activity_at'], _api_datetime(user.last_activity_at))
 
     def test_user_status_malformed_bearer_token(self):
         """ Test for user status with malformed bearer token"""

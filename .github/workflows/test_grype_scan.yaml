@@ -1,0 +1,89 @@
+name: Vuln. Scan
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+    tags-ignore:
+      - '**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+
+jobs:
+  scan-image:
+    name: Check for package vulnerabilities with Grype
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: >
+          docker build
+          --file ./Dockerfile
+          --tag userver-auth:local
+          --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          --build-arg BUILD_VERSION=${{ github.sha }}
+          --build-arg VCS_REF=${GITHUB_SHA}
+          .
+
+      - name: Scan image
+        uses: anchore/scan-action@v7
+        id: scan
+        with:
+          image: userver-auth:local
+          fail-build: false
+          severity-cutoff: low
+
+      - name: Upload Anchore scan SARIF report
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}
+
+      # Do not fail the job on findings: Alpine/python base images often report CVEs before fixes ship.
+      - name: Summarize Grype results
+        id: grype_summary
+        run: |
+          set -euo pipefail
+          sarif="${{ steps.scan.outputs.sarif }}"
+          n=$(jq '(.runs[0].results // []) | length' "$sarif")
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+          echo "Grype reported $n finding(s) in SARIF (uploaded to Security tab)."
+          if [ "$n" -eq 0 ]; then
+            echo "has_findings=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "has_findings=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Grype vulnerability scan"
+            echo ""
+            echo "**${n}** finding(s) in image \`userver-auth:local\` (built in this workflow). Full **SARIF** is available under **Security** for this repo."
+            echo ""
+            jq -r '(.runs[0].results // [])[] |
+              "- **" + (.ruleId // "unknown") + "** (`" + (.level // "?") + "`): "
+              + ((.message.text // "no message") | gsub("\n"; " ")
+              | if length > 220 then .[0:217] + "..." else . end)
+            ' "$sarif" | head -60
+            if [ "$n" -gt 60 ]; then
+              echo ""
+              echo "_…and $((n - 60)) more (see Code scanning / SARIF)._"
+            fi
+          } > grype-comment.md
+
+      - name: Comment on PR with Grype results
+        if: >
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          steps.grype_summary.outputs.has_findings == 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: grype-userver-auth
+          path: grype-comment.md
+        continue-on-error: true

@@ -21,6 +21,24 @@ Part of the [uServer](https://github.com/users/ferdn4ndo/projects/1) stack.
 | `project/server/` | Flask app, config, auth blueprints, models |
 | `migrations/` | Alembic (created by `setup.sh` / `flask db init`; committed after first migration) |
 | `docker-compose.yml` | Builds and runs `userver-auth`, attaches external network `nginx-proxy` |
+| `.github/workflows/` | CI: unit tests (Docker + Postgres), ShellCheck, Gitleaks, Grype scan; release workflows |
+
+## CI/CD and Docker Hub
+
+On **push** and **pull requests** to `main`, GitHub Actions builds the image, runs **`flask test`** against a Postgres service, runs ShellCheck on `*.sh`, Gitleaks, and a **Grype** scan whose SARIF is uploaded to the **Security** tab (the workflow does not fail the build on reported base-image CVEs; triage and rebuild images as upstream fixes land).
+
+When you **publish a GitHub Release**, two workflows run (same pattern as the other `ferdn4ndo/*` images):
+
+1. **`create_release_container.yaml`** — builds and pushes **`ferdn4ndo/userver-auth:<tag>`** and **`ferdn4ndo/userver-auth:latest`** to Docker Hub. Configure repository secrets **`DOCKER_LOGIN`** and **`DOCKER_PASSWORD`** (and ensure the Docker Hub repo exists or can be created).
+2. **`create_release_assets.yaml`** — uploads a source tarball and `checksum.txt` to the release.
+
+Pull the published image:
+
+```sh
+docker pull ferdn4ndo/userver-auth:latest
+```
+
+Run it with your own `.env` / `-e` flags and a reachable Postgres instance (the image includes the app; use your stack’s networking and secrets).
 
 ## Prepare the environment
 
