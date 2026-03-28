@@ -1,6 +1,9 @@
 import os
 
+from dotenv import load_dotenv
 from flask import Flask, jsonify, make_response
+
+load_dotenv()
 from flask_bcrypt import Bcrypt
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
@@ -15,9 +18,10 @@ app_settings = os.getenv('APP_SETTINGS', 'project.server.config.DevelopmentConfi
 app.config.from_object(app_settings)
 
 limiter = Limiter(
-    app,
-    key_func=get_remote_address,
-    default_limits=app.config['THROTTLING_LIMITS']
+    get_remote_address,
+    app=app,
+    default_limits=app.config['THROTTLING_LIMITS'],
+    storage_uri=app.config['RATELIMIT_STORAGE_URI'],
 )
 
 bcrypt = Bcrypt(app)
