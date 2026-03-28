@@ -57,6 +57,11 @@ class User(db.Model):
     def update_last_activity(self):
         self.last_activity_at = datetime.datetime.now()
 
+    def set_password(self, plain_password):
+        self.password = bcrypt.generate_password_hash(
+            plain_password, app.config.get('BCRYPT_LOG_ROUNDS')
+        ).decode()
+
     def prepare_jwt(self, token_type="access"):
         exp_secs = os.environ['JWT_EXP_DELTA_SECS'] if token_type == 'access' else os.environ['JWT_REFRESH_DELTA_SECS']
 
