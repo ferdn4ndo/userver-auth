@@ -17,14 +17,11 @@ jobs: # Docs: <https://git.io/JvxXE>
     name: Check codebase quality with ShellCheck
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code into the Go module directory
+      - name: Check out code
         uses: actions/checkout@v6
 
-      - name: Run ShellCheck with ReviewDog
-        uses: reviewdog/action-shellcheck@v1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          path: "." # Optional.
-          pattern: "*.sh" # Optional.
-          exclude: "./.git/*" # Optional.
-          check_all_files_with_shebangs: "false" # Optional.
+      - name: Run ShellCheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y shellcheck
+          find . -name '*.sh' -not -path './.git/*' -print0 | xargs -0 -r shellcheck

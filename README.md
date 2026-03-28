@@ -25,7 +25,7 @@ Part of the [uServer](https://github.com/users/ferdn4ndo/projects/1) stack.
 
 ## CI/CD and Docker Hub
 
-On **push** and **pull requests** to `main`, GitHub Actions builds the image, runs **`flask test`** against a Postgres service, runs ShellCheck on `*.sh`, Gitleaks, and a **Grype** scan whose SARIF is uploaded to the **Security** tab (the workflow does not fail the build on reported base-image CVEs; triage and rebuild images as upstream fixes land).
+On **push** and **pull requests** to `main`, GitHub Actions builds the image, runs **`flask test`** against a Postgres service, runs **ShellCheck** on `*.sh` (via the Ubuntu `shellcheck` package so the job does not depend on downloading the reviewdog release binary), Gitleaks, and a **Grype** scan whose SARIF is uploaded to the **Security** tab (the workflow does not fail the build on reported base-image CVEs; triage and rebuild images as upstream fixes land).
 
 When you **publish a GitHub Release**, two workflows run (same pattern as the other `ferdn4ndo/*` images):
 
@@ -132,6 +132,9 @@ Use **`docker exec … sh -c`** only if the script is POSIX-clean; this project 
 | POST | `/auth/login` | Login |
 | POST | `/auth/refresh` | Refresh access token |
 | GET | `/auth/me` | Current user / token check |
+| PATCH | `/auth/me/password` | Change password (`Authorization: Bearer <access_token>`; JSON `current_password`, `new_password`) |
+| GET | `/auth/systems/<system_name>/users/<username>` | Look up a user in a system (`Authorization: Bearer <access_token>`) |
+| PATCH | `/auth/systems/<system_name>/token` | Rotate system token (JSON `current_system_token`; optional `new_system_token`, otherwise server-generated) |
 | POST | `/auth/logout` | Logout (blacklist refresh token) |
 
 Static docs may be served under the app’s configured static path when present.
