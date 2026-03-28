@@ -118,6 +118,10 @@ else
   if [ -d migrations/versions ] && [ -n "$(ls -A migrations/versions 2>/dev/null)" ]; then
     echo -e "${COLOR_BLUE}Applying Alembic migrations...${COLOR_RESET}"
     flask db upgrade
+    # create_all only adds tables missing from the DB (safe with Alembic). Covers bind-mounted
+    # trees that omit a revision file, or DBs that never got the system-table migration.
+    echo -e "${COLOR_BLUE}Ensuring model tables exist (CREATE missing only)...${COLOR_RESET}"
+    flask create-db
   else
     echo -e "${COLOR_BLUE}No migrations yet: creating tables and initializing Alembic...${COLOR_RESET}"
     flask create-db
