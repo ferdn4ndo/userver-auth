@@ -17,6 +17,7 @@ class System(db.Model):
     """
     System model for storing system tokens used to select the login/registration destination
     """
+    __tablename__ = 'system'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(500), unique=True, nullable=False)
