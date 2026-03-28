@@ -1,4 +1,5 @@
 import os
+import secrets
 
 from datetime import datetime
 from flask import Blueprint, request, make_response, jsonify
@@ -263,6 +264,74 @@ class SystemUserAPI(MethodView):
             return make_response(jsonify({'message': str(e)})), 401
 
 
+class UpdateSystemTokenAPI(MethodView):
+    """
+    Rotate a system's API token; requires the current token (same trust model as register/login).
+    """
+    @limiter.limit("100 per day")
+    def patch(self, system_name):
+        try:
+            check_request_body_keys(request.json, ['current_system_token'])
+            data = request.json
+            system = System.query.filter_by(name=system_name).first()
+            if system is None:
+                return make_response(jsonify({'message': 'System not found.'}), 404)
+            if system.token != data['current_system_token']:
+                raise UnauthorizedError('Invalid current system token.')
+
+            new_token = data.get('new_system_token')
+            if new_token is None or new_token == '':
+                new_token = secrets.token_urlsafe(32)
+            elif new_token != system.token:
+                if System.query.filter_by(token=new_token).first() is not None:
+                    raise ConflictError('Token already in use.')
+
+            system.token = new_token
+            db.session.commit()
+
+            return make_response(jsonify({
+                'name': system.name,
+                'token': system.token,
+            }), 200)
+
+        except BadRequestError as e:
+            return make_response(jsonify({'message': str(e)})), 400
+        except UnauthorizedError as e:
+            return make_response(jsonify({'message': str(e)})), 401
+        except ConflictError as e:
+            return make_response(jsonify({'message': str(e)})), 409
+
+
+class UpdateUserPasswordAPI(MethodView):
+    """
+    Change password for the authenticated user; requires current password and a valid access token.
+    """
+    @limiter.limit("1000 per hour")
+    def patch(self):
+        try:
+            auth_token = get_authorization_token(request)
+            user = get_user_from_token(auth_token=auth_token)
+            check_request_body_keys(request.json, ['current_password', 'new_password'])
+            data = request.json
+
+            if not data['new_password']:
+                raise BadRequestError('new_password must not be empty.')
+
+            if not bcrypt.check_password_hash(user.password, data['current_password']):
+                raise UnauthorizedError('Incorrect current password.')
+
+            user.set_password(data['new_password'])
+            user.update_last_activity()
+            db.session.commit()
+
+            return make_response(jsonify({'message': 'Password updated.'}), 200)
+
+        except BadRequestError as e:
+            return make_response(jsonify({'message': str(e)})), 400
+        except UnauthorizedError as e:
+            return make_response(jsonify({'message': str(e)})), 401
+
+
 class LogoutAPI(MethodView):
     """
     Logout Resource
@@ -293,6 +362,8 @@ refresh_view = RefreshTokenAPI.as_view('refresh_api')
 me_view = MeAPI.as_view('user_api')
 system_user_view = SystemUserAPI.as_view('system_user_api')
 logout_view = LogoutAPI.as_view('logout_api')
+update_system_token_view = UpdateSystemTokenAPI.as_view('update_system_token_api')
+update_user_password_view = UpdateUserPasswordAPI.as_view('update_user_password_api')
 
 # add Rules for API Endpoints
 auth_blueprint.add_url_rule(
@@ -329,4 +400,14 @@ auth_blueprint.add_url_rule(
     '/auth/logout',
     view_func=logout_view,
     methods=['POST']
+)
+auth_blueprint.add_url_rule(
+    '/auth/systems/<system_name>/token',
+    view_func=update_system_token_view,
+    methods=['PATCH']
+)
+auth_blueprint.add_url_rule(
+    '/auth/me/password',
+    view_func=update_user_password_view,
+    methods=['PATCH']
 )

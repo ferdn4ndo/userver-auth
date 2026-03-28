@@ -18,9 +18,14 @@ paths:
     post:
   /auth/me:
     get:
+  /auth/me/password:
+    patch:
+      summary: Change password (Bearer access token + current and new password)
   /auth/logout:
     post:
-
+  /auth/systems/{system_name}/token:
+    patch:
+      summary: Rotate system token (requires current_system_token in body)
 
   /auth/login:
     get:

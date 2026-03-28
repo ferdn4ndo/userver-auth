@@ -76,6 +76,23 @@ class TestAuthBlueprint(BaseTestCase):
             content_type='application/json',
         )
 
+    def patch_system_token(self, system_name, **kwargs):
+        return self.client.patch(
+            '/auth/systems/{}/token'.format(system_name),
+            data=json.dumps(kwargs),
+            content_type='application/json',
+        )
+
+    def patch_user_password(self, access_token, **kwargs):
+        return self.client.patch(
+            '/auth/me/password',
+            data=json.dumps(kwargs),
+            headers={
+                'Authorization': 'Bearer {}'.format(access_token)
+            },
+            content_type='application/json',
+        )
+
     def blacklist_token(self, token):
         blacklist_token = BlacklistToken(token=token)
         db.session.add(blacklist_token)
@@ -549,6 +566,181 @@ class TestAuthBlueprint(BaseTestCase):
             self.assertEqual(response.content_type, 'application/json')
             data = json.loads(response.data.decode())
             self.assertIn('message', data)
+
+    def test_patch_system_token_success_explicit_new(self):
+        """Rotate system token when current token and new token are provided."""
+        with self.client:
+            self.create_system(name=self.DEFAULT_SYSTEM_NAME)
+            old_token = self.get_system_token()
+            reg = self.register_default_user()
+            self.assertEqual(reg.status_code, 201)
+
+            new_token = 'explicit-new-token-value-unique-12345'
+            response = self.patch_system_token(
+                self.DEFAULT_SYSTEM_NAME,
+                current_system_token=old_token,
+                new_system_token=new_token,
+            )
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data.decode())
+            self.assertEqual(data['name'], self.DEFAULT_SYSTEM_NAME)
+            self.assertEqual(data['token'], new_token)
+
+            system = System.query.filter_by(name=self.DEFAULT_SYSTEM_NAME).first()
+            self.assertEqual(system.token, new_token)
+
+            login_old = self.login_user(
+                username=self.DEFAULT_USER_EMAIL,
+                system_name=self.DEFAULT_SYSTEM_NAME,
+                system_token=old_token,
+                password=self.DEFAULT_USER_PASSWORD,
+            )
+            self.assertEqual(login_old.status_code, 401)
+
+            login_new = self.login_user(
+                username=self.DEFAULT_USER_EMAIL,
+                system_name=self.DEFAULT_SYSTEM_NAME,
+                system_token=new_token,
+                password=self.DEFAULT_USER_PASSWORD,
+            )
+            self.assertEqual(login_new.status_code, 200)
+
+    def test_patch_system_token_success_auto_generated(self):
+        """Omitting new_system_token generates a new token server-side."""
+        with self.client:
+            self.create_system(name=self.DEFAULT_SYSTEM_NAME)
+            old_token = self.get_system_token()
+            response = self.patch_system_token(
+                self.DEFAULT_SYSTEM_NAME,
+                current_system_token=old_token,
+            )
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data.decode())
+            self.assertIn('token', data)
+            self.assertNotEqual(data['token'], old_token)
+            self.assertGreater(len(data['token']), 10)
+
+    def test_patch_system_token_system_not_found(self):
+        with self.client:
+            response = self.patch_system_token(
+                'nonexistent',
+                current_system_token='any',
+            )
+            self.assertEqual(response.status_code, 404)
+
+    def test_patch_system_token_wrong_current(self):
+        with self.client:
+            self.create_system(name=self.DEFAULT_SYSTEM_NAME)
+            response = self.patch_system_token(
+                self.DEFAULT_SYSTEM_NAME,
+                current_system_token='wrong-token',
+                new_system_token='new-one',
+            )
+            self.assertEqual(response.status_code, 401)
+            data = json.loads(response.data.decode())
+            self.assertIn('message', data)
+
+    def test_patch_system_token_missing_current(self):
+        with self.client:
+            self.create_system(name=self.DEFAULT_SYSTEM_NAME)
+            response = self.patch_system_token(
+                self.DEFAULT_SYSTEM_NAME,
+                new_system_token='only-new',
+            )
+            self.assertEqual(response.status_code, 400)
+
+    def test_patch_system_token_conflict(self):
+        with self.client:
+            self.create_system(name=self.DEFAULT_SYSTEM_NAME)
+            self.create_system(name='otherSystem')
+            sys_a_token = System.query.filter_by(name=self.DEFAULT_SYSTEM_NAME).first().token
+            sys_b_token = System.query.filter_by(name='otherSystem').first().token
+            response = self.patch_system_token(
+                self.DEFAULT_SYSTEM_NAME,
+                current_system_token=sys_a_token,
+                new_system_token=sys_b_token,
+            )
+            self.assertEqual(response.status_code, 409)
+
+    def test_patch_user_password_success(self):
+        with self.client:
+            resp_register = self.register_default_user()
+            self.assertEqual(resp_register.status_code, 201)
+            access = json.loads(resp_register.data.decode())['auth']['access_token']
+            new_password = 'new-secure-pass-9'
+
+            response = self.patch_user_password(
+                access,
+                current_password=self.DEFAULT_USER_PASSWORD,
+                new_password=new_password,
+            )
+            self.assertEqual(response.status_code, 200)
+            data = json.loads(response.data.decode())
+            self.assertIn('message', data)
+
+            login_old = self.login_default_user()
+            self.assertEqual(login_old.status_code, 401)
+
+            login_new = self.login_user(
+                username=self.DEFAULT_USER_EMAIL,
+                system_name=self.DEFAULT_SYSTEM_NAME,
+                system_token=self.get_system_token(),
+                password=new_password,
+            )
+            self.assertEqual(login_new.status_code, 200)
+
+    def test_patch_user_password_wrong_current(self):
+        with self.client:
+            resp_register = self.register_default_user()
+            access = json.loads(resp_register.data.decode())['auth']['access_token']
+            response = self.patch_user_password(
+                access,
+                current_password='not-the-password',
+                new_password='something-else',
+            )
+            self.assertEqual(response.status_code, 401)
+
+    def test_patch_user_password_empty_new(self):
+        with self.client:
+            resp_register = self.register_default_user()
+            access = json.loads(resp_register.data.decode())['auth']['access_token']
+            response = self.patch_user_password(
+                access,
+                current_password=self.DEFAULT_USER_PASSWORD,
+                new_password='',
+            )
+            self.assertEqual(response.status_code, 400)
+
+    def test_patch_user_password_missing_fields(self):
+        with self.client:
+            resp_register = self.register_default_user()
+            access = json.loads(resp_register.data.decode())['auth']['access_token']
+            response = self.patch_user_password(
+                access,
+                current_password=self.DEFAULT_USER_PASSWORD,
+            )
+            self.assertEqual(response.status_code, 400)
+
+    def test_patch_user_password_no_auth(self):
+        with self.client:
+            response = self.client.patch(
+                '/auth/me/password',
+                data=json.dumps({
+                    'current_password': self.DEFAULT_USER_PASSWORD,
+                    'new_password': 'x',
+                }),
+                content_type='application/json',
+            )
+            self.assertEqual(response.status_code, 401)
+
+    def test_patch_user_password_invalid_token(self):
+        with self.client:
+            response = self.patch_user_password(
+                'invalid.jwt.here',
+                current_password=self.DEFAULT_USER_PASSWORD,
+                new_password='x',
+            )
+            self.assertEqual(response.status_code, 401)
 
 
 if __name__ == '__main__':
