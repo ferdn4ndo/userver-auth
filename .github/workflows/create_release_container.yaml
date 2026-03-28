@@ -1,0 +1,38 @@
+name: Create Release Container
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  docker-image:
+    name: Create Release Container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - uses: gacts/github-slug@v1
+        id: slug
+
+      - name: Login to DockerHub Registry
+        run: echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_LOGIN }} --password-stdin
+
+      - name: Build the Docker image
+        run: >
+          docker build
+          -t ferdn4ndo/userver-auth:latest
+          --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          --build-arg BUILD_VERSION=${{ github.event.release.tag_name }}
+          --build-arg VCS_REF=${GITHUB_SHA}
+          .
+
+      - name: Tag the versioned Docker image
+        run: docker tag ferdn4ndo/userver-auth:latest ferdn4ndo/userver-auth:${{ steps.slug.outputs.version }}
+
+      - name: Push the versioned Docker image to the registry
+        run: docker push ferdn4ndo/userver-auth:${{ steps.slug.outputs.version }}
+
+      - name: Push the latest Docker image to the registry
+        run: docker push ferdn4ndo/userver-auth:latest

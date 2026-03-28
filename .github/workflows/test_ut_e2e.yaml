@@ -1,0 +1,88 @@
+name: Unit tests
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+    tags-ignore:
+      - '**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+
+jobs:
+  unit-tests:
+    name: Build image and run Flask tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        # Quote the whole health command so Docker does not treat `-U` as its own flag.
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5432'
+      POSTGRES_USER: postgres
+      POSTGRES_PASS: postgres
+      POSTGRES_DB: userver_auth_ci
+      POSTGRES_DB_TEST: userver_auth_test_ci
+      FLASK_SECRET_KEY: ci-flask-secret-not-for-production
+      SYSTEM_CREATION_TOKEN: ci-system-creation-token
+      JWT_EXP_DELTA_SECS: '3600'
+      JWT_REFRESH_DELTA_SECS: '259200'
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Create application databases
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq postgresql-client
+          for i in $(seq 1 30); do
+            PGPASSWORD=postgres psql -h localhost -U postgres -p 5432 -c 'SELECT 1' && break
+            sleep 1
+          done
+          PGPASSWORD=postgres psql -h localhost -U postgres -p 5432 -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE DATABASE userver_auth_ci;
+          CREATE DATABASE userver_auth_test_ci;
+          SQL
+
+      - name: Build Docker image
+        run: >
+          docker build
+          --file ./Dockerfile
+          --tag userver-auth:local
+          --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          --build-arg BUILD_VERSION=${{ github.sha }}
+          --build-arg VCS_REF=${GITHUB_SHA}
+          .
+
+      - name: Run unit tests
+        run: >
+          docker run --rm --network host
+          -e FLASK_APP=manage:app
+          -e POSTGRES_HOST="$POSTGRES_HOST"
+          -e POSTGRES_PORT="$POSTGRES_PORT"
+          -e POSTGRES_USER="$POSTGRES_USER"
+          -e POSTGRES_PASS="$POSTGRES_PASS"
+          -e POSTGRES_DB="$POSTGRES_DB"
+          -e POSTGRES_DB_TEST="$POSTGRES_DB_TEST"
+          -e FLASK_SECRET_KEY="$FLASK_SECRET_KEY"
+          -e SYSTEM_CREATION_TOKEN="$SYSTEM_CREATION_TOKEN"
+          -e JWT_EXP_DELTA_SECS="$JWT_EXP_DELTA_SECS"
+          -e JWT_REFRESH_DELTA_SECS="$JWT_REFRESH_DELTA_SECS"
+          userver-auth:local
+          bash -lc "flask test"

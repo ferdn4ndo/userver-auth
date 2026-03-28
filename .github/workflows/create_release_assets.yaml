@@ -1,0 +1,38 @@
+name: Create Release Assets
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  create-release-asset:
+    name: Create Release Assets
+    runs-on: ubuntu-latest
+    env:
+      ARCHIVE_NAME: ${{ github.event.repository.name }}-${{ github.event.release.tag_name }}
+    steps:
+      - name: Download release tarball
+        run: curl -sL "${{ github.event.release.tarball_url }}" >"${{ env.ARCHIVE_NAME }}".tar.gz
+
+      - name: Unpack release tree
+        run: mkdir "${{ env.ARCHIVE_NAME }}" && tar -xzf "${{ env.ARCHIVE_NAME }}".tar.gz -C "${{ env.ARCHIVE_NAME }}" --strip-components 1
+
+      - name: Remove .github from archive tree
+        run: rm -rf "${{ env.ARCHIVE_NAME }}"/.github
+
+      - name: Create distributable .tar.gz
+        run: tar -czf "${{ env.ARCHIVE_NAME }}".tar.gz "${{ env.ARCHIVE_NAME }}"
+
+      - name: SHA256 checksum
+        run: sha256sum "${{ env.ARCHIVE_NAME }}".tar.gz >checksum.txt
+
+      - name: Upload assets to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.ARCHIVE_NAME }}.tar.gz
+            checksum.txt
