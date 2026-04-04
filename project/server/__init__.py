@@ -35,6 +35,13 @@ from project.server.docs.views import docs_blueprint
 app.register_blueprint(docs_blueprint)
 
 
+@app.route('/healthz')
+@limiter.exempt
+def healthz():
+    """Liveness probe: no DB access (Docker / orchestrator health checks)."""
+    return jsonify({'status': 'ok'})
+
+
 @app.errorhandler(429)
 def ratelimit_handler(e):
     return make_response(jsonify({

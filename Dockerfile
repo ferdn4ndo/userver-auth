@@ -54,4 +54,9 @@ RUN set -ex \
 COPY . /code/
 
 EXPOSE 5000
+
+# Uses FLASK_PORT when set (matches entrypoint / Waitress); default 5000.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD python -c "import os,urllib.request as u; p=os.environ.get('FLASK_PORT','5000'); u.urlopen(f'http://127.0.0.1:{p}/healthz', timeout=4)"
+
 CMD ["/bin/bash", "entrypoint.sh"]
