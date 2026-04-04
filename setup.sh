@@ -71,6 +71,9 @@ DECLARE
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = un) THEN
     EXECUTE 'CREATE ROLE ' || quote_ident(un) || ' LOGIN PASSWORD ' || quote_literal(pw);
+  ELSE
+    -- Volume / older deploy: role exists but password may not match POSTGRES_PASS anymore.
+    EXECUTE 'ALTER ROLE ' || quote_ident(un) || ' WITH LOGIN PASSWORD ' || quote_literal(pw);
   END IF;
 END
 \$do\$;
