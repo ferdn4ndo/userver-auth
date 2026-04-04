@@ -103,6 +103,8 @@ See `.env.template` for the full list and comments.
 
 **Idempotent run** (no drops): creates role/databases if missing, fixes owner when needed, then `flask db upgrade` or first-time migration bootstrap.
 
+If Alembic reports **multiple heads** (parallel `flask db migrate` runs), `setup.sh` runs **`flask db merge … heads`** once and upgrades again. **Commit** any new `migrations/versions/*` file that merge adds so other hosts stay linear.
+
 ```sh
 docker exec -it userver-auth bash -c "./setup.sh"
 ```

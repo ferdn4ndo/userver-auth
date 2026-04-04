@@ -71,6 +71,9 @@ DECLARE
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = un) THEN
     EXECUTE 'CREATE ROLE ' || quote_ident(un) || ' LOGIN PASSWORD ' || quote_literal(pw);
+  ELSE
+    -- Volume / older deploy: role exists but password may not match POSTGRES_PASS anymore.
+    EXECUTE 'ALTER ROLE ' || quote_ident(un) || ' WITH LOGIN PASSWORD ' || quote_literal(pw);
   END IF;
 END
 \$do\$;
@@ -109,6 +112,31 @@ fi
 
 export FLASK_APP=manage:app
 
+# Apply Alembic upgrades; if the tree has parallel branches (e.g. two "flask db migrate" from the
+# same parent), merge them then upgrade. See: https://alembic.sqlalchemy.org/en/latest/branches.html
+run_flask_db_upgrade() {
+  local log st
+  log=$(mktemp)
+  set +e
+  flask db upgrade >"$log" 2>&1
+  st=$?
+  set -e
+  if [ "$st" -eq 0 ]; then
+    rm -f "$log"
+    return 0
+  fi
+  if grep -qi 'multiple head revisions' "$log"; then
+    rm -f "$log"
+    echo -e "${COLOR_YELLOW}Alembic has multiple heads; creating a merge revision...${COLOR_RESET}"
+    flask db merge -m "merge Alembic heads" heads
+    flask db upgrade
+    return 0
+  fi
+  cat "$log"
+  rm -f "$log"
+  return "$st"
+}
+
 if [ "$RESET" = true ]; then
   echo -e "${COLOR_BLUE}Creating tables and initial migration...${COLOR_RESET}"
   flask create-db
@@ -117,7 +145,7 @@ if [ "$RESET" = true ]; then
 else
   if [ -d migrations/versions ] && [ -n "$(ls -A migrations/versions 2>/dev/null)" ]; then
     echo -e "${COLOR_BLUE}Applying Alembic migrations...${COLOR_RESET}"
-    flask db upgrade
+    run_flask_db_upgrade
     # create_all only adds tables missing from the DB (safe with Alembic). Covers bind-mounted
     # trees that omit a revision file, or DBs that never got the system-table migration.
     echo -e "${COLOR_BLUE}Ensuring model tables exist (CREATE missing only)...${COLOR_RESET}"
