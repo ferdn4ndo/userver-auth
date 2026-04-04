@@ -129,6 +129,7 @@ Use **`docker exec … sh -c`** only if the script is POSIX-clean; this project 
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/healthz` | Liveness (`{"status":"ok"}`); used by the image `HEALTHCHECK` (not rate-limited) |
 | POST | `/auth/system` | Create a system (requires `Authorization: Token <SYSTEM_CREATION_TOKEN>`) |
 | POST | `/auth/register` | Register a user in a system |
 | POST | `/auth/login` | Login |

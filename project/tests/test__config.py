@@ -27,6 +27,11 @@ class TestTestingConfig(TestCase):
         self.assertFalse(app.config['SECRET_KEY'] == 'my_precious')
         self.assertTrue(app.config['DEBUG'])
 
+    def test_healthz(self):
+        response = self.client.get('/healthz')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json, {'status': 'ok'})
+
 
 class TestProductionConfig(TestCase):
     def create_app(self):
