@@ -5,10 +5,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    working_dir: /code
+    command: ["/bin/bash", "./entrypoint.sh"]
     volumes:
-      - ./:/code/
+      - ./:/code
     env_file:
       - .env
+    environment:
+      MIGRATE_BIN: ${MIGRATE_BIN:-./out/userver-auth}
+      APP_BIN: ${APP_BIN:-./out/userver-auth}
 
 networks:
   default:

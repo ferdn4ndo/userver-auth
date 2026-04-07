@@ -14,7 +14,7 @@ on:
 
 jobs:
   unit-tests:
-    name: Build image and run Flask tests
+    name: Go tests (integration with Postgres)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -22,7 +22,6 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-        # Quote the whole health command so Docker does not treat `-U` as its own flag.
         options: >-
           --health-cmd="pg_isready -U postgres"
           --health-interval 10s
@@ -37,17 +36,23 @@ jobs:
       POSTGRES_USER: postgres
       POSTGRES_PASS: postgres
       POSTGRES_DB: userver_auth_ci
-      POSTGRES_DB_TEST: userver_auth_test_ci
-      FLASK_SECRET_KEY: ci-flask-secret-not-for-production
+      APP_SECRET_KEY: ci-app-secret-not-for-production-min-32-chars!!
       SYSTEM_CREATION_TOKEN: ci-system-creation-token
       JWT_EXP_DELTA_SECS: '3600'
       JWT_REFRESH_DELTA_SECS: '259200'
+      BCRYPT_COST: '4'
+      ENV_MODE: development
 
     steps:
       - name: Check out code
         uses: actions/checkout@v6
 
-      - name: Create application databases
+      - name: Build dev stage from Dockerfile
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: docker build --target dev -t userver-auth:dev .
+
+      - name: Create application database
         run: |
           sudo apt-get update -qq
           sudo apt-get install -qq postgresql-client
@@ -55,34 +60,22 @@ jobs:
             PGPASSWORD=postgres psql -h localhost -U postgres -p 5432 -c 'SELECT 1' && break
             sleep 1
           done
-          PGPASSWORD=postgres psql -h localhost -U postgres -p 5432 -v ON_ERROR_STOP=1 <<'SQL'
-          CREATE DATABASE userver_auth_ci;
-          CREATE DATABASE userver_auth_test_ci;
-          SQL
+          PGPASSWORD=postgres psql -h localhost -U postgres -p 5432 -v ON_ERROR_STOP=1 -c 'CREATE DATABASE userver_auth_ci;'
 
-      - name: Build Docker image
-        run: >
-          docker build
-          --file ./Dockerfile
-          --tag userver-auth:local
-          --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-          --build-arg BUILD_VERSION=${{ github.sha }}
-          --build-arg VCS_REF=${GITHUB_SHA}
-          .
-
-      - name: Run unit tests
-        run: >
-          docker run --rm --network host
-          -e FLASK_APP=manage:app
-          -e POSTGRES_HOST="$POSTGRES_HOST"
-          -e POSTGRES_PORT="$POSTGRES_PORT"
-          -e POSTGRES_USER="$POSTGRES_USER"
-          -e POSTGRES_PASS="$POSTGRES_PASS"
-          -e POSTGRES_DB="$POSTGRES_DB"
-          -e POSTGRES_DB_TEST="$POSTGRES_DB_TEST"
-          -e FLASK_SECRET_KEY="$FLASK_SECRET_KEY"
-          -e SYSTEM_CREATION_TOKEN="$SYSTEM_CREATION_TOKEN"
-          -e JWT_EXP_DELTA_SECS="$JWT_EXP_DELTA_SECS"
-          -e JWT_REFRESH_DELTA_SECS="$JWT_REFRESH_DELTA_SECS"
-          userver-auth:local
-          bash -lc "flask test"
+      - name: Run Go tests (Dockerfile dev stage)
+        run: |
+          docker run --rm --network host \
+            -v "$PWD:/code" -w /code \
+            -e POSTGRES_HOST="$POSTGRES_HOST" \
+            -e POSTGRES_PORT="$POSTGRES_PORT" \
+            -e POSTGRES_USER="$POSTGRES_USER" \
+            -e POSTGRES_PASS="$POSTGRES_PASS" \
+            -e POSTGRES_DB="$POSTGRES_DB" \
+            -e APP_SECRET_KEY="$APP_SECRET_KEY" \
+            -e SYSTEM_CREATION_TOKEN="$SYSTEM_CREATION_TOKEN" \
+            -e JWT_EXP_DELTA_SECS="$JWT_EXP_DELTA_SECS" \
+            -e JWT_REFRESH_DELTA_SECS="$JWT_REFRESH_DELTA_SECS" \
+            -e BCRYPT_COST="$BCRYPT_COST" \
+            -e ENV_MODE="$ENV_MODE" \
+            userver-auth:dev \
+            bash -c 'go mod download && go test ./... -count=1 -v'
