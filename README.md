@@ -1,156 +1,138 @@
 # uServer Auth
 
-JWT-based authentication microservice built with **Flask**, **SQLAlchemy**, **PostgreSQL**, and **Alembic**. It started from ideas in [flask-jwt-auth](https://github.com/realpython/flask-jwt-auth); background in this [Real Python article](https://realpython.com/blog/python/token-based-authentication-with-flask/).
+[![Go version](https://img.shields.io/github/go-mod/go-version/ferdn4ndo/userver-auth)](https://github.com/ferdn4ndo/userver-auth/blob/main/go.mod)
+[![Release](https://img.shields.io/github/v/release/ferdn4ndo/userver-auth)](https://github.com/ferdn4ndo/userver-auth/releases)
+[![Docker image size](https://img.shields.io/docker/image-size/ferdn4ndo/userver-auth/latest)](https://hub.docker.com/r/ferdn4ndo/userver-auth)
+[![Docker pulls](https://img.shields.io/docker/pulls/ferdn4ndo/userver-auth)](https://hub.docker.com/r/ferdn4ndo/userver-auth)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ferdn4ndo/userver-auth)](https://goreportcard.com/report/github.com/ferdn4ndo/userver-auth)
+[![Unit tests](https://github.com/ferdn4ndo/userver-auth/actions/workflows/test_ut_e2e.yaml/badge.svg?branch=main)](https://github.com/ferdn4ndo/userver-auth/actions/workflows/test_ut_e2e.yaml)
+[![Grype scan](https://github.com/ferdn4ndo/userver-auth/actions/workflows/test_grype_scan.yaml/badge.svg?branch=main)](https://github.com/ferdn4ndo/userver-auth/actions/workflows/test_grype_scan.yaml)
+[![Gitleaks](https://github.com/ferdn4ndo/userver-auth/actions/workflows/test_code_leaks.yaml/badge.svg?branch=main)](https://github.com/ferdn4ndo/userver-auth/actions/workflows/test_code_leaks.yaml)
+[![Code quality](https://github.com/ferdn4ndo/userver-auth/actions/workflows/test_code_quality.yaml/badge.svg?branch=main)](https://github.com/ferdn4ndo/userver-auth/actions/workflows/test_code_quality.yaml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen.svg)](https://github.com/ferdn4ndo/userver-auth/blob/main/LICENSE)
+
+
+JWT-based authentication microservice: **Go** (Gin, `sqlx`, golang-migrate), **PostgreSQL**, HS256 access/refresh tokens, bcrypt passwords. The HTTP API matches the earlier Python deployment so existing clients keep working.
 
 Part of the [uServer](https://github.com/users/ferdn4ndo/projects/1) stack.
 
 ## Requirements
 
-- **Docker** and **Docker Compose** v2 (plugin or standalone `docker compose`)
-- A **PostgreSQL** instance reachable from the app container (same Compose stack or external host)
-- Optional **Redis** (or compatible URL) for shared rate-limit storage when running more than one app replica (see `.env.template`)
+- **Docker** and **Docker Compose** v2 (enable **BuildKit** for image builds, e.g. `export DOCKER_BUILDKIT=1`)
+- **PostgreSQL** reachable from the app (Compose stack or external)
+- **Go** is optional on the host: use **`make go-test`** / **`make go-build`** — they **`docker build --target dev`** then **`docker run`** with the repo bind-mounted (same **`Dockerfile`** as production; **`docker-compose.yml`** only runs the app, same idea as a single-service project such as **flora-hive**).
 
-## Project layout (high level)
+## Project layout
 
 | Path | Role |
 |------|------|
-| `entrypoint.sh` | Chooses config from `ENV_MODE`, runs DB setup, starts **Waitress** (`python -m waitress`) |
-| `setup.sh` | Postgres role/databases + Alembic (`upgrade` or first-time `init` / `migrate`) |
-| `colors.sh` | Shared ANSI colors (sourced by `entrypoint.sh` and `setup.sh`) |
-| `manage.py` | Flask app for `FLASK_APP=manage:app` — CLI: `flask db …`, `flask test`, `flask run-prod`, etc. |
-| `project/server/` | Flask app, config, auth blueprints, models |
-| `migrations/` | Alembic (created by `setup.sh` / `flask db init`; committed after first migration) |
-| `docker-compose.yml` | Builds and runs `userver-auth`, attaches external network `nginx-proxy` |
-| `.github/workflows/` | CI: unit tests (Docker + Postgres), ShellCheck, Gitleaks, Grype scan; release workflows |
+| `cmd/` | `userver-auth` CLI: `app:serve`, `migrate:up`, `migrate:down` |
+| `internal/` | HTTP routes, services, repositories |
+| `lib/` | Config (`POSTGRES_*`, JWT, secrets), DB wrapper, logging |
+| `migrations/*.sql` | golang-migrate SQL (idempotent `CREATE IF NOT EXISTS` for existing DBs) |
+| `integration/` | API tests against Postgres (skipped when `POSTGRES_HOST` is unset) |
+| `entrypoint.sh` | Optional `setup.sh`, then `app:serve` |
+| `setup.sh` | Postgres role/DB provisioning (root user), then **`migrate:up`** |
+| `docker-compose.yml` | `userver-auth` only (Go tooling via **`Makefile`** + Dockerfile **`dev`** stage) |
+| `.github/workflows/` | CI: Go tests in container + Postgres, ShellCheck, Gitleaks, Grype (triggers on **`main`**) |
 
-## CI/CD and Docker Hub
+## Database migrations (Alembic → golang-migrate)
 
-On **push** and **pull requests** to `main`, GitHub Actions builds the image, runs **`flask test`** against a Postgres service, runs **ShellCheck** on `*.sh` (via the Ubuntu `shellcheck` package so the job does not depend on downloading the reviewdog release binary), Gitleaks, and a **Grype** scan whose SARIF is uploaded to the **Security** tab (the workflow does not fail the build on reported base-image CVEs; triage and rebuild images as upstream fixes land).
+- New migrations live under `migrations/` as `NNNNNN_name.up.sql` / `.down.sql`.
+- The baseline revision **`000001_initial_schema`** uses **`CREATE TABLE IF NOT EXISTS`** so databases already populated by **Alembic** keep working: running `migrate:up` creates **`schema_migrations`** and applies only what is missing. The old **`alembic_version`** table can remain until you remove it manually after cutover.
+- Revoked JWTs are stored in **`blocklist_tokens`** (`blocked_at`). If you still have the legacy table **`blacklist_tokens`** / column **`blacklisted_at`**, run once on Postgres:
 
-When you **publish a GitHub Release**, two workflows run (same pattern as the other `ferdn4ndo/*` images):
+  ```sql
+  ALTER TABLE blacklist_tokens RENAME TO blocklist_tokens;
+  ALTER TABLE blocklist_tokens RENAME COLUMN blacklisted_at TO blocked_at;
+  ALTER TABLE blocklist_tokens RENAME CONSTRAINT uq_blacklist_tokens_token TO uq_blocklist_tokens_token;
+  ```
 
-1. **`create_release_container.yaml`** — builds and pushes **`ferdn4ndo/userver-auth:<tag>`** and **`ferdn4ndo/userver-auth:latest`** to Docker Hub. Configure repository secrets **`DOCKER_LOGIN`** and **`DOCKER_PASSWORD`** (and ensure the Docker Hub repo exists or can be created).
-2. **`create_release_assets.yaml`** — uploads a source tarball and `checksum.txt` to the release.
+  (Skip any line that errors because the object was already renamed.)
 
-Pull the published image:
+## Run with Docker Compose
 
-```sh
-docker pull ferdn4ndo/userver-auth:latest
-```
-
-Run it with your own `.env` / `-e` flags and a reachable Postgres instance (the image includes the app; use your stack’s networking and secrets).
-
-## Prepare the environment
-
-1. Copy `.env.template` to `.env` and fill in values (Postgres, secrets, optional proxy/Let’s Encrypt vars).
-2. Ensure the **external** Docker network named in `docker-compose.yml` exists (this repo expects `nginx-proxy`), or change/remove the `networks` block for local-only runs:
+1. Copy `.env.template` → `.env` and set Postgres, `APP_SECRET_KEY`, `SYSTEM_CREATION_TOKEN`, etc.
+2. Create the external network if you use nginx-proxy: `docker network create nginx-proxy`
+3. **Build the Linux binary with Docker** (writes `./out/userver-auth` on the bind-mounted repo):
 
    ```sh
-   docker network create nginx-proxy
+   make go-build
    ```
 
-3. **Commit Alembic revisions** under `migrations/` after you generate them (they are not gitignored so `flask db upgrade` works for other clones and CI).
+4. Start:
 
-## Run the application
+   ```sh
+   docker compose up --build
+   ```
 
-```sh
-docker compose up --build
-```
+`working_dir` is `/code` (repo mount). Defaults: `MIGRATE_BIN=./out/userver-auth`, `APP_BIN=./out/userver-auth`. The production image (no volume) uses `/app/main` and `/app/migrations`.
 
-On **every container start**, `entrypoint.sh` runs **`setup.sh`** (no `--reset`): it ensures the app Postgres user and databases exist, aligns DB ownership for PostgreSQL 15+, then runs **`flask db upgrade`** when `migrations/versions` has revisions, otherwise bootstraps Alembic. After that, **Waitress** serves `project.server:app` on `0.0.0.0:${FLASK_PORT:-5000}`.
+`SKIP_DB_SETUP=1` skips `setup.sh` (no migrations).
 
-To **skip** DB setup (e.g. Postgres temporarily unavailable, or migrations managed outside the container), set in `.env`:
-
-```env
-SKIP_DB_SETUP=1
-```
-
-The app will start without applying migrations; use only when you understand the trade-offs.
-
-### Configuration
+## Configuration (env)
 
 | Variable | Purpose |
 |----------|---------|
-| `ENV_MODE` | `prod` → `ProductionConfig`; unset or any other value → `DevelopmentConfig` |
-| `APP_SETTINGS` | Normally set by entrypoint; override only if you know what you are doing |
-| `FLASK_PORT` | Listen port inside the container (default `5000`) |
-| `WAITRESS_THREADS` | Waitress thread pool (default `8`) |
-| `RATELIMIT_STORAGE_URI` / `REDIS_URL` | Flask-Limiter backend; use Redis in multi-instance production |
-| `FLASK_SECRET_KEY` | Flask session/signing; keep secret |
-| `SYSTEM_CREATION_TOKEN` | Bearer token required to create systems (`Authorization: Token …`) |
-| `JWT_EXP_DELTA_SECS` / `JWT_REFRESH_DELTA_SECS` | Access and refresh token lifetimes |
-| `POSTGRES_*` | App database connection |
-| `POSTGRES_ROOT_*` | Superuser used only by `setup.sh` for DDL |
-| `SKIP_DB_SETUP` | Set to `1` to skip `setup.sh` on container start (see below) |
-
-See `.env.template` for the full list and comments.
-
-### Security notes
-
-- Treat **`FLASK_SECRET_KEY`**, **`POSTGRES_PASS`**, **`POSTGRES_ROOT_PASS`**, and **`SYSTEM_CREATION_TOKEN`** as secrets; never commit real `.env` files.
-- **`POSTGRES_ROOT_*`** is powerful: scope network access so only trusted hosts reach Postgres.
-- Prefer **`RATELIMIT_STORAGE_URI`** pointing at **Redis** when you run **multiple** app containers so limits are shared.
-- **`DEBUG`** is off in production config; keep `ENV_MODE=prod` in production.
-
-### Performance notes
-
-- Tune **`WAITRESS_THREADS`** for CPU and expected concurrency.
-- Rate limits are configured in `project/server/config.py` (`THROTTLING_LIMITS`) per environment.
-
-## Database setup (`setup.sh`)
-
-`setup.sh` is invoked automatically from **`entrypoint.sh`** on each start. You can also run it manually:
-
-**Idempotent run** (no drops): creates role/databases if missing, fixes owner when needed, then `flask db upgrade` or first-time migration bootstrap.
-
-If Alembic reports **multiple heads** (parallel `flask db migrate` runs), `setup.sh` runs **`flask db merge … heads`** once and upgrades again. **Commit** any new `migrations/versions/*` file that merge adds so other hosts stay linear.
-
-```sh
-docker exec -it userver-auth bash -c "./setup.sh"
-```
-
-**Destructive reset** (drops app DBs and role, deletes `./migrations`, recreates schema + initial revision):
-
-```sh
-docker exec -it userver-auth bash -c "./setup.sh --reset"
-```
-
-**Help**
-
-```sh
-docker exec -it userver-auth bash -c "./setup.sh --help"
-```
-
-If **`ALTER DATABASE … OWNER`** fails, close other connections to that database and retry.
-
-Use **`docker exec … sh -c`** only if the script is POSIX-clean; this project expects **bash** for `setup.sh` and `entrypoint.sh`.
+| `ENV_MODE` | `prod` → TLS `sslmode=require` on Postgres; else `disable` |
+| `APP_PORT` / `PORT` | Listen port (default `5000`; legacy `FLASK_PORT` still read if set) |
+| `POSTGRES_*` | App DB connection |
+| `POSTGRES_MAX_OPEN_CONNS` | Optional cap on open DB connections (default `20`) |
+| `POSTGRES_ROOT_*` | Superuser for `setup.sh` only |
+| `APP_SECRET_KEY` / `JWT_SECRET_KEY` | JWT HMAC secret (legacy `FLASK_SECRET_KEY` still read if set) |
+| `SYSTEM_CREATION_TOKEN` | `Authorization: Token …` for `POST /auth/system` |
+| `JWT_EXP_DELTA_SECS` / `JWT_REFRESH_DELTA_SECS` | Token lifetimes |
+| `BCRYPT_COST` | Optional; default `13` in prod, `4` otherwise |
+| `SENTRY_DSN` | Optional Sentry |
+| `TRUSTED_PROXY_CIDRS` | Comma-separated CIDRs for Gin `X-Forwarded-*` trust (default: loopback + RFC1918) |
+| `CORS_DEBUG` | Set to `1` or `true` for verbose rs/cors logs (default off; avoids noise on `/healthz` without `Origin`) |
+| `SKIP_DB_SETUP` | `1` to skip DB setup on start |
 
 ## API endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/healthz` | Liveness (`{"status":"ok"}`); used by the image `HEALTHCHECK` (not rate-limited) |
-| POST | `/auth/system` | Create a system (requires `Authorization: Token <SYSTEM_CREATION_TOKEN>`) |
-| POST | `/auth/register` | Register a user in a system |
+| GET | `/healthz` | Liveness `{"status":"ok"}` |
+| POST | `/auth/system` | Create system (`Authorization: Token <SYSTEM_CREATION_TOKEN>`) |
+| POST | `/auth/register` | Register user |
 | POST | `/auth/login` | Login |
-| POST | `/auth/refresh` | Refresh access token |
-| GET | `/auth/me` | Current user / token check |
-| PATCH | `/auth/me/password` | Change password (`Authorization: Bearer <access_token>`; JSON `current_password`, `new_password`) |
-| GET | `/auth/systems/<system_name>/users/<username>` | Look up a user in a system (`Authorization: Bearer <access_token>`) |
-| PATCH | `/auth/systems/<system_name>/token` | Rotate system token (JSON `current_system_token`; optional `new_system_token`, otherwise server-generated) |
-| POST | `/auth/logout` | Logout (blacklist refresh token) |
-
-Static docs may be served under the app’s configured static path when present.
+| POST | `/auth/refresh` | Refresh tokens (`Authorization: Bearer <refresh>`) |
+| GET | `/auth/me` | Current user |
+| PATCH | `/auth/me/password` | Change password |
+| GET | `/auth/systems/<system_name>/users/<username>` | Lookup user |
+| PATCH | `/auth/systems/<system_name>/token` | Rotate system token |
+| POST | `/auth/logout` | Blocklist access token (revoke) |
 
 ## Testing
 
 ```sh
-docker exec -it userver-auth bash -c "flask test"
-docker exec -it userver-auth bash -c "flask cov"
+# Unit + integration (integration skips without POSTGRES_HOST)
+make go-test
+
+# With Postgres: ensure POSTGRES_* reach the container (e.g. `.env` is passed when present).
+# If the DB is another service on the same external network as compose, use:
+#   make go-test-integration DOCKER_NETWORK=nginx-proxy
+make go-test-integration
 ```
 
-`FLASK_APP=manage:app` is set in the image so `flask` commands work without extra `-e`.
+CI builds the **`Dockerfile`** **`dev`** stage and runs `go test ./...` in that image with a Postgres service.
 
-## Flask CLI (manual)
+## CI/CD and Docker Hub
 
-Examples: `flask db current`, `flask run-prod` (Waitress via Flask), `flask create-db`. Prefer the image default of **`python -m waitress`** from `entrypoint.sh` for production-like logging.
+On push/PR to `main`: Go tests (containerized toolchain), ShellCheck on `*.sh`, Gitleaks, Grype (SARIF upload; build not failed on findings).
+
+Release workflows publish **`ferdn4ndo/userver-auth:<tag>`** and assets as before.
+
+```sh
+docker pull ferdn4ndo/userver-auth:latest
+```
+
+## CLI examples
+
+```sh
+./out/userver-auth migrate:up
+./out/userver-auth app:serve
+./out/userver-auth health:probe   # exits 0 if /healthz is OK (used by the container image)
+```
+
+Load `.env` automatically via `godotenv` when present.

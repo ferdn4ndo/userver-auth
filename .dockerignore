@@ -13,3 +13,8 @@ temp
 .coverage
 htmlcov
 .DS_Store
+out/
+integration/
+*.md
+LICENSE
+.editorconfig

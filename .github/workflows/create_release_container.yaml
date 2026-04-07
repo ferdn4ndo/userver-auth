@@ -9,6 +9,8 @@ jobs:
   docker-image:
     name: Create Release Container
     runs-on: ubuntu-latest
+    env:
+      DOCKER_BUILDKIT: "1"
     steps:
       - name: Check out code
         uses: actions/checkout@v6

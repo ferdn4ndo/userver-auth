@@ -16,6 +16,8 @@ jobs:
   scan-image:
     name: Check for package vulnerabilities with Grype
     runs-on: ubuntu-latest
+    env:
+      DOCKER_BUILDKIT: "1"
     permissions:
       contents: read
       security-events: write
@@ -47,7 +49,7 @@ jobs:
         with:
           sarif_file: ${{ steps.scan.outputs.sarif }}
 
-      # Do not fail the job on findings: Alpine/python base images often report CVEs before fixes ship.
+      # Do not fail the job on findings: base images often report CVEs before fixes ship.
       - name: Summarize Grype results
         id: grype_summary
         run: |

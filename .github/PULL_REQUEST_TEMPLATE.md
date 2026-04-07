@@ -9,7 +9,7 @@ Feel free to remove sections that do not make sense.
 ## Checklist :rotating_light:
 <!-- Check all items that apply. -->
 - [ ] My code follows the code style
-- [ ] Added or updated tests as needed (`flask test`)
+- [ ] Added or updated tests as needed (`go test ./...` or `make go-test`)
 - [ ] All lints and tests passed correctly locally
 - [ ] I upgraded dependencies to the latest working version
 
