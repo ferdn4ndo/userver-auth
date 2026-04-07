@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/main ./cmd
 
 # Run
-FROM alpine:3.21
+FROM alpine:3.23
 
 ARG BUILD_DATE=unknown
 ARG BUILD_VERSION=unknown
