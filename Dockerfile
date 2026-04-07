@@ -1,10 +1,10 @@
 # Dev / Makefile: Go toolchain (bind-mount repo at /code). Release build continues below.
-FROM golang:1.25-bookworm AS dev
+FROM golang:1.26-bookworm AS dev
 WORKDIR /code
 ENV GOTOOLCHAIN=local GOMODCACHE=/go/pkg/mod
 
 # Compile release binary
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 ARG BUILD_DATE=unknown
 ARG BUILD_VERSION=unknown
