@@ -29,6 +29,25 @@ sql_escape_literal() {
 
 POSTGRES_PASS_ESC=$(sql_escape_literal "${POSTGRES_PASS}")
 
+run_root_psql() {
+  PGPASSWORD="${POSTGRES_ROOT_PASS}" psql -h "${POSTGRES_HOST}" -U "${POSTGRES_ROOT_USER}" -p "${POSTGRES_PORT}" -v ON_ERROR_STOP=1 "$@"
+}
+
+# CREATE DATABASE / ALTER DATABASE OWNER cannot run inside PL/pgSQL DO blocks (Postgres treats DO as a function).
+ensure_database_and_owner() {
+  local db="$1"
+  local n
+  n=$(run_root_psql -tAc "SELECT count(*) FROM pg_database WHERE datname = '${db}'" | tr -d '[:space:]')
+  if [ "${n}" = "0" ]; then
+    run_root_psql -c "CREATE DATABASE ${db} OWNER ${POSTGRES_USER};"
+  else
+    n=$(run_root_psql -tAc "SELECT count(*) FROM pg_database d JOIN pg_roles r ON r.oid = d.datdba WHERE d.datname = '${db}' AND r.rolname IS DISTINCT FROM '${POSTGRES_USER}'" | tr -d '[:space:]')
+    if [ "${n}" != "0" ]; then
+      run_root_psql -c "ALTER DATABASE ${db} OWNER TO ${POSTGRES_USER};"
+    fi
+  fi
+}
+
 : "${MIGRATE_BIN:=./main}"
 if [ ! -x "$MIGRATE_BIN" ] && [ -x "/app/main" ]; then
   MIGRATE_BIN="/app/main"
@@ -60,7 +79,7 @@ else
   echo -e "${COLOR_BLUE}Ensuring Postgres role and databases exist (no drop; use --reset to recreate)...${COLOR_RESET}"
   TAGU="_u${RANDOM}${RANDOM}_$$_"
   TAGP="_p${RANDOM}${RANDOM}_$$_"
-  PGPASSWORD=${POSTGRES_ROOT_PASS} psql -h "${POSTGRES_HOST}" -U "${POSTGRES_ROOT_USER}" -p "${POSTGRES_PORT}" -v ON_ERROR_STOP=1 <<EOF
+  run_root_psql <<EOF
 DO \$do\$
 DECLARE
   un text := \$${TAGU}\$${POSTGRES_USER}\$${TAGU}\$;
@@ -73,37 +92,10 @@ BEGIN
   END IF;
 END
 \$do\$;
-
-DO \$do\$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_database WHERE datname = '${POSTGRES_DB}') THEN
-    EXECUTE format('CREATE DATABASE %I OWNER %I', '${POSTGRES_DB}', '${POSTGRES_USER}');
-  ELSIF EXISTS (
-    SELECT 1 FROM pg_catalog.pg_database d
-    JOIN pg_catalog.pg_roles r ON r.oid = d.datdba
-    WHERE d.datname = '${POSTGRES_DB}' AND r.rolname IS DISTINCT FROM '${POSTGRES_USER}'
-  ) THEN
-    EXECUTE format('ALTER DATABASE %I OWNER TO %I', '${POSTGRES_DB}', '${POSTGRES_USER}');
-  END IF;
-END
-\$do\$;
-
-DO \$do\$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_database WHERE datname = '${POSTGRES_DB_TEST}') THEN
-    EXECUTE format('CREATE DATABASE %I OWNER %I', '${POSTGRES_DB_TEST}', '${POSTGRES_USER}');
-  ELSIF EXISTS (
-    SELECT 1 FROM pg_catalog.pg_database d
-    JOIN pg_catalog.pg_roles r ON r.oid = d.datdba
-    WHERE d.datname = '${POSTGRES_DB_TEST}' AND r.rolname IS DISTINCT FROM '${POSTGRES_USER}'
-  ) THEN
-    EXECUTE format('ALTER DATABASE %I OWNER TO %I', '${POSTGRES_DB_TEST}', '${POSTGRES_USER}');
-  END IF;
-END
-\$do\$;
-
-REVOKE ALL PRIVILEGES ON DATABASE postgres FROM ${POSTGRES_USER};
 EOF
+  ensure_database_and_owner "${POSTGRES_DB}"
+  ensure_database_and_owner "${POSTGRES_DB_TEST}"
+  run_root_psql -c "REVOKE ALL PRIVILEGES ON DATABASE postgres FROM ${POSTGRES_USER};"
 fi
 
 if [ ! -x "$MIGRATE_BIN" ]; then

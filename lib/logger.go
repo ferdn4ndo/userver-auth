@@ -59,7 +59,7 @@ func (l *FxLogger) LogEvent(event fxevent.Event) {
 		)
 	case *fxevent.OnStartExecuted:
 		if e.Err != nil {
-			l.Debug("OnStart hook failed: ",
+			l.Error("OnStart hook failed: ",
 				zap.String("callee", e.FunctionName),
 				zap.String("caller", e.CallerName),
 				zap.Error(e.Err),
@@ -78,7 +78,7 @@ func (l *FxLogger) LogEvent(event fxevent.Event) {
 		)
 	case *fxevent.OnStopExecuted:
 		if e.Err != nil {
-			l.Debug("OnStop hook failed: ",
+			l.Error("OnStop hook failed: ",
 				zap.String("callee", e.FunctionName),
 				zap.String("caller", e.CallerName),
 				zap.Error(e.Err),
@@ -106,7 +106,9 @@ func (l *FxLogger) LogEvent(event fxevent.Event) {
 	case *fxevent.Invoking:
 		l.Debug("invoking: ", e.FunctionName)
 	case *fxevent.Started:
-		if e.Err == nil {
+		if e.Err != nil {
+			l.Error("fx application start failed", zap.Error(e.Err))
+		} else {
 			l.Debug("started")
 		}
 	case *fxevent.LoggerInitialized:
