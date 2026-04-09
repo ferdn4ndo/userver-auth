@@ -1,10 +1,29 @@
 package repositories
 
-import "go.uber.org/fx"
+import (
+	"go.uber.org/fx"
 
-// Module wires data access constructors.
+	"userver-auth/internal/services"
+)
+
+// Module wires data access constructors. fx.As exposes the same instances as services.*Store interfaces for DI.
 var Module = fx.Options(
-	fx.Provide(NewSystemRepository),
-	fx.Provide(NewUserRepository),
-	fx.Provide(NewBlocklistRepository),
+	fx.Provide(
+		fx.Annotate(
+			NewSystemRepository,
+			fx.As(new(services.SystemStore)),
+		),
+	),
+	fx.Provide(
+		fx.Annotate(
+			NewUserRepository,
+			fx.As(new(services.UserStore)),
+		),
+	),
+	fx.Provide(
+		fx.Annotate(
+			NewBlocklistRepository,
+			fx.As(new(services.BlocklistStore)),
+		),
+	),
 )

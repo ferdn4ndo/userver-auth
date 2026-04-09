@@ -2,6 +2,8 @@ package commands
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -39,9 +41,13 @@ func (s *ServeCommand) Run() lib.CommandRunner {
 				lib.NewSentryHandler(logger, env)
 				// Middleware is applied inside route.Setup() only (avoid double registration).
 				route.Setup()
+				ln, err := net.Listen("tcp", server.Addr)
+				if err != nil {
+					return fmt.Errorf("listen on %s: %w", server.Addr, err)
+				}
 				go func() {
-					logger.Info("Running server on port " + env.ServerPort)
-					if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					logger.Info("Running server on " + ln.Addr().String())
+					if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
 						logger.Error("Server error: ", err.Error())
 					}
 				}()

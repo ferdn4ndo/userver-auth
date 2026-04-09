@@ -52,9 +52,16 @@ func writeHTTPError(c *gin.Context, err error) bool {
 func (a AuthRoutes) Setup() {
 	a.logger.Info("Setting up auth routes")
 
-	lim100d, _ := ExtraRateLimit("100-D")
-	lim1000h, _ := ExtraRateLimit("1000-H")
-	lim10000h, _ := ExtraRateLimit("10000-H")
+	mustRL := func(formatted string) gin.HandlerFunc {
+		h, err := ExtraRateLimit(formatted)
+		if err != nil {
+			panic("ExtraRateLimit(" + formatted + "): " + err.Error())
+		}
+		return h
+	}
+	lim100d := mustRL("100-D")
+	lim1000h := mustRL("1000-H")
+	lim10000h := mustRL("10000-H")
 
 	a.handler.POST("/auth/system", lim100d, a.postSystem)
 	a.handler.POST("/auth/register", lim1000h, a.postRegister)
