@@ -3,6 +3,7 @@ package routes
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -49,29 +50,39 @@ func writeHTTPError(c *gin.Context, err error) bool {
 	return true
 }
 
-func (a AuthRoutes) Setup() {
+func (a AuthRoutes) Setup() error {
 	a.logger.Info("Setting up auth routes")
 
-	mustRL := func(formatted string) gin.HandlerFunc {
+	mustRL := func(envKey, formatted string) (gin.HandlerFunc, error) {
 		h, err := ExtraRateLimit(formatted)
 		if err != nil {
-			panic("ExtraRateLimit(" + formatted + "): " + err.Error())
+			return nil, fmt.Errorf("%s=%q: %w", envKey, formatted, err)
 		}
-		return h
+		return h, nil
 	}
-	lim100d := mustRL("100-D")
-	lim1000h := mustRL("1000-H")
-	lim10000h := mustRL("10000-H")
+	limSys, err := mustRL("RATELIMIT_AUTH_SYSTEM", a.env.RatelimitAuthSystem)
+	if err != nil {
+		return err
+	}
+	limBurst, err := mustRL("RATELIMIT_AUTH_BURST", a.env.RatelimitAuthBurst)
+	if err != nil {
+		return err
+	}
+	limRead, err := mustRL("RATELIMIT_AUTH_READ", a.env.RatelimitAuthRead)
+	if err != nil {
+		return err
+	}
 
-	a.handler.POST("/auth/system", lim100d, a.postSystem)
-	a.handler.POST("/auth/register", lim1000h, a.postRegister)
-	a.handler.POST("/auth/login", lim1000h, a.postLogin)
-	a.handler.POST("/auth/refresh", lim1000h, a.postRefresh)
-	a.handler.GET("/auth/me", lim10000h, a.getMe)
-	a.handler.GET("/auth/systems/:system_name/users/:username", lim10000h, a.getSystemUser)
-	a.handler.POST("/auth/logout", lim1000h, a.postLogout)
-	a.handler.PATCH("/auth/systems/:system_name/token", lim100d, a.patchSystemToken)
-	a.handler.PATCH("/auth/me/password", lim1000h, a.patchMePassword)
+	a.handler.POST("/auth/system", limSys, a.postSystem)
+	a.handler.POST("/auth/register", limBurst, a.postRegister)
+	a.handler.POST("/auth/login", limBurst, a.postLogin)
+	a.handler.POST("/auth/refresh", limBurst, a.postRefresh)
+	a.handler.GET("/auth/me", limRead, a.getMe)
+	a.handler.GET("/auth/systems/:system_name/users/:username", limRead, a.getSystemUser)
+	a.handler.POST("/auth/logout", limBurst, a.postLogout)
+	a.handler.PATCH("/auth/systems/:system_name/token", limSys, a.patchSystemToken)
+	a.handler.PATCH("/auth/me/password", limBurst, a.patchMePassword)
+	return nil
 }
 
 func (a AuthRoutes) postSystem(c *gin.Context) {

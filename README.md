@@ -86,6 +86,12 @@ Part of the [uServer](https://github.com/users/ferdn4ndo/projects/1) stack.
 | `SENTRY_DSN` | Optional Sentry |
 | `TRUSTED_PROXY_CIDRS` | Comma-separated CIDRs for Gin `X-Forwarded-*` trust (default: loopback + RFC1918) |
 | `CORS_DEBUG` | Set to `1` or `true` for verbose rs/cors logs (default off; avoids noise on `/healthz` without `Origin`) |
+| `RATELIMIT_GLOBAL_PROD` | Comma-separated global caps when `ENV_MODE=prod` (default `1000-D`; [ulule/limiter](https://github.com/ulule/limiter) format) |
+| `RATELIMIT_GLOBAL_DEV` | Same for non-prod (default `10000-D,100-H`) |
+| `RATELIMIT_AUTH_SYSTEM` | `/auth` system create + token rotate (default `100-D`) |
+| `RATELIMIT_AUTH_BURST` | register, login, refresh, logout, password change (default `1000-H`) |
+| `RATELIMIT_AUTH_READ` | `GET /auth/me` and user lookup (default `10000-H`) |
+| `RATELIMIT_STORAGE_URI` | Reserved for a shared limiter store (unused in-process memory store today) |
 | `SKIP_DB_SETUP` | `1` to skip DB setup on start |
 
 ## API endpoints
