@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 	"go.uber.org/fx"
 
@@ -50,10 +52,13 @@ func NewRoutes(
 }
 
 // Setup registers middleware and routes on the Gin engine.
-func (r Routes) Setup() {
+func (r Routes) Setup() error {
 	r.logger.Info("Setting up HTTP routes")
 	r.handler.Gin.Use(r.defaultRL)
 	r.mw.Setup()
 	r.health.Setup()
-	r.auth.Setup()
+	if err := r.auth.Setup(); err != nil {
+		return fmt.Errorf("auth routes: %w", err)
+	}
+	return nil
 }

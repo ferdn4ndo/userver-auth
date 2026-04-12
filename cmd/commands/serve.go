@@ -40,7 +40,9 @@ func (s *ServeCommand) Run() lib.CommandRunner {
 			OnStart: func(ctx context.Context) error {
 				lib.NewSentryHandler(logger, env)
 				// Middleware is applied inside route.Setup() only (avoid double registration).
-				route.Setup()
+				if err := route.Setup(); err != nil {
+					return fmt.Errorf("routes: %w", err)
+				}
 				ln, err := net.Listen("tcp", server.Addr)
 				if err != nil {
 					return fmt.Errorf("listen on %s: %w", server.Addr, err)

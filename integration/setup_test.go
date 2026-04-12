@@ -153,7 +153,9 @@ func doSetup() error {
 	middlewares.NewSentryMiddleware(h, logger, env).Setup()
 	middlewares.NewCorsMiddleware(h, logger, env).Setup()
 	routes.NewHealthRoutes(h, health, logger).Setup()
-	routes.NewAuthRoutes(h, env, auth, logger).Setup()
+	if err := routes.NewAuthRoutes(h, env, auth, logger).Setup(); err != nil {
+		return err
+	}
 
 	sharedEngine = h.Gin
 	return nil

@@ -24,6 +24,13 @@ type Env struct {
 	JWTRefreshDeltaSecs int
 	BcryptCost          int
 	RateLimitStorageURI string
+	// RatelimitGlobalProd / RatelimitGlobalDev: comma-separated ulule/limiter formats (e.g. "1000-D,60-M").
+	RatelimitGlobalProd string
+	RatelimitGlobalDev  string
+	// RatelimitAuth* apply to /auth/* route groups (see routes.AuthRoutes.Setup).
+	RatelimitAuthSystem string // POST /auth/system, PATCH .../token
+	RatelimitAuthBurst  string // register, login, refresh, logout, PATCH /auth/me/password
+	RatelimitAuthRead   string // GET /auth/me, GET .../users/:username
 	RedisURL            string
 	SentryDsn           string
 	// TrustedProxyCIDRs is a comma-separated list for Gin SetTrustedProxies (empty = loopback + RFC1918).
@@ -73,6 +80,11 @@ func NewEnv() Env {
 		JWTRefreshDeltaSecs: jwtRef,
 		BcryptCost:          bcryptCost,
 		RateLimitStorageURI: os.Getenv("RATELIMIT_STORAGE_URI"),
+		RatelimitGlobalProd: getenvDefault("RATELIMIT_GLOBAL_PROD", "1000-D"),
+		RatelimitGlobalDev:  getenvDefault("RATELIMIT_GLOBAL_DEV", "10000-D,100-H"),
+		RatelimitAuthSystem: getenvDefault("RATELIMIT_AUTH_SYSTEM", "100-D"),
+		RatelimitAuthBurst:  getenvDefault("RATELIMIT_AUTH_BURST", "1000-H"),
+		RatelimitAuthRead:   getenvDefault("RATELIMIT_AUTH_READ", "10000-H"),
 		RedisURL:            os.Getenv("REDIS_URL"),
 		SentryDsn:           os.Getenv("SENTRY_DSN"),
 		TrustedProxyCIDRs:   os.Getenv("TRUSTED_PROXY_CIDRS"),

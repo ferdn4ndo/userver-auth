@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ulule/limiter/v3"
@@ -14,6 +15,34 @@ import (
 )
 
 var sharedMemStore = memory.NewStore()
+
+// splitRateFormats parses a comma-separated list of ulule formatted rates (e.g. "1000-D,60-M").
+func splitRateFormats(csv string) []string {
+	var out []string
+	for _, part := range strings.Split(csv, ",") {
+		if t := strings.TrimSpace(part); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func globalFormatsFromEnv(env lib.Env) []string {
+	var csv string
+	if env.IsProduction() {
+		csv = env.RatelimitGlobalProd
+	} else {
+		csv = env.RatelimitGlobalDev
+	}
+	formats := splitRateFormats(csv)
+	if len(formats) == 0 {
+		if env.IsProduction() {
+			return []string{"1000-D"}
+		}
+		return []string{"10000-D", "100-H"}
+	}
+	return formats
+}
 
 func composeLimiters(formats []string) ([]*limiter.Limiter, error) {
 	out := make([]*limiter.Limiter, 0, len(formats))
@@ -28,13 +57,9 @@ func composeLimiters(formats []string) ([]*limiter.Limiter, error) {
 }
 
 // DefaultRateLimit applies global request caps (all routes except healthz).
+// Formats come from RATELIMIT_GLOBAL_PROD or RATELIMIT_GLOBAL_DEV (comma-separated).
 func DefaultRateLimit(env lib.Env) (gin.HandlerFunc, error) {
-	var formats []string
-	if env.IsProduction() {
-		formats = []string{"1000-D", "10-M"}
-	} else {
-		formats = []string{"10000-D", "100-H"}
-	}
+	formats := globalFormatsFromEnv(env)
 	lim, err := composeLimiters(formats)
 	if err != nil {
 		return nil, err
