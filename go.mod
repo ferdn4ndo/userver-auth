@@ -3,8 +3,8 @@ module userver-auth
 go 1.25.0
 
 require (
-	github.com/getsentry/sentry-go v0.45.0
-	github.com/getsentry/sentry-go/gin v0.45.0
+	github.com/getsentry/sentry-go v0.46.1
+	github.com/getsentry/sentry-go/gin v0.46.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
